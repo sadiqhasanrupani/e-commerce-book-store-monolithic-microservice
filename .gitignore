@@ -14,6 +14,7 @@ lerna-debug.log*
 
 # OS
 .DS_Store
+Thumbs.db
 
 # Tests
 /coverage
@@ -27,6 +28,9 @@ lerna-debug.log*
 *.launch
 .settings/
 *.sublime-workspace
+*.swp
+*.swo
+*~
 
 # IDE - VSCode
 .vscode/*
@@ -43,6 +47,8 @@ lerna-debug.log*
 .env.local
 .env.development
 .env.testing
+.env.production
+*.env
 
 # temp directory
 .temp
@@ -56,3 +62,88 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Docker volumes and data directories
+/postgres-data
+/minio-data
+/redis-data
+/mongodb-data
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+
+# Package manager
+.pnpm-debug.log
+.pnpm-store/
+.yarn/
+.yarnrc.yml
+package-lock.json
+yarn.lock
+
+# NestJS
+.nest-cli.json.backup
+dist/
+build/
+
+# TypeScript
+*.tsbuildinfo
+*.tsbuildinfo.*
+
+# Debug
+.vscode/launch.json.backup
+
+# Backup files
+*.backup
+*.bak
+*.old
+
+# Upload directories
+/uploads
+/public/uploads
+/static/uploads
+
+# Generated files
+/generated
+*.generated.*
+
+# Local development
+*.local.*
+local-config.json
+
+# Cache
+.cache
+.eslintcache
+.stylelintcache
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Secrets and certificates
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+secrets/
+certificates/
+
+# Database dumps
+*.sql
+*.dump
+*.backup.sql
+
+# MinIO/S3 local storage
+.minio.sys/
+
+# Miscellaneous
+.vercel
+.serverless
+.fusebox
