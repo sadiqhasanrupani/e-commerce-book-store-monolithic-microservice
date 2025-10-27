@@ -9,6 +9,7 @@ import {
   IsInt,
   Min,
   Max,
+  IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { BookGenre } from '../enums/book-genres.enum';
@@ -50,7 +51,7 @@ export class CreateBookDto {
    */
   @IsOptional()
   @IsInt()
-  authorId?: number;
+  authorId: number;
 
   /**
    * Optional nested author details.
@@ -79,4 +80,18 @@ export class CreateBookDto {
   @Min(0)
   @Max(5)
   rating: number;
+
+  @IsOptional()
+  @IsArray()
+  fileUrls?: string[];
+
+  /**
+   * Snapshots for the first image url
+   * For E-Book: 10 snapshots are needed
+   * For Physical Book: 5 snapshots are needed.
+   * */
+
+  @IsOptional()
+  @IsArray()
+  snapshotUrls?: string[];
 }

@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { BooksService } from './books.service';
+import { BooksService } from './providers/books.service';
 import { MessagePattern } from '@nestjs/microservices';
 import { BOOK_PATTERNS } from '@app/contract/books/patterns/books.pattern';
 

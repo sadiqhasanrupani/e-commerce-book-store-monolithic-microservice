@@ -12,6 +12,8 @@ import { DatabaseModule } from '@app/database';
  */
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
+import { BooksModule } from './books/books.module';
+import { UploadModule } from './upload/upload.module';
 
 
 @Module({
@@ -23,7 +25,7 @@ import { AuthModule } from './auth/auth.module';
     /**
      * Feature modules
      */
-    UsersModule, AuthModule,
+    UsersModule, AuthModule, BooksModule, UploadModule,
   ],
 })
 export class MagicPagesApiGatewayModule { }

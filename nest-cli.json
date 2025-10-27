@@ -55,6 +55,24 @@
         "tsConfigPath": "libs/global-config/tsconfig.lib.json"
       }
     },
+    "inventory": {
+      "type": "application",
+      "root": "apps/inventory",
+      "entryFile": "main",
+      "sourceRoot": "apps/inventory/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/inventory/tsconfig.app.json"
+      }
+    },
+    "invoice": {
+      "type": "application",
+      "root": "apps/invoice",
+      "entryFile": "main",
+      "sourceRoot": "apps/invoice/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/invoice/tsconfig.app.json"
+      }
+    },
     "magic-pages-api-gateway": {
       "type": "application",
       "root": "apps/magic-pages-api-gateway",
@@ -62,6 +80,51 @@
       "sourceRoot": "apps/magic-pages-api-gateway/src",
       "compilerOptions": {
         "tsConfigPath": "apps/magic-pages-api-gateway/tsconfig.app.json"
+      }
+    },
+    "notification": {
+      "type": "application",
+      "root": "apps/notification",
+      "entryFile": "main",
+      "sourceRoot": "apps/notification/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/notification/tsconfig.app.json"
+      }
+    },
+    "orders": {
+      "type": "application",
+      "root": "apps/orders",
+      "entryFile": "main",
+      "sourceRoot": "apps/orders/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/orders/tsconfig.app.json"
+      }
+    },
+    "payments": {
+      "type": "application",
+      "root": "apps/payments",
+      "entryFile": "main",
+      "sourceRoot": "apps/payments/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/payments/tsconfig.app.json"
+      }
+    },
+    "storage": {
+      "type": "application",
+      "root": "apps/storage",
+      "entryFile": "main",
+      "sourceRoot": "apps/storage/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/storage/tsconfig.app.json"
+      }
+    },
+    "uploads": {
+      "type": "application",
+      "root": "apps/uploads",
+      "entryFile": "main",
+      "sourceRoot": "apps/uploads/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/uploads/tsconfig.app.json"
       }
     },
     "users": {

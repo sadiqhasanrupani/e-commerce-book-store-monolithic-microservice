@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateUserDto } from '@app/contract/users/dtos/create-user.dto';
+import { UpdateUserDto } from '@app/contract/users/dtos/update-user.dto';
 
 import { USER_PATTERNS } from '@app/contract/users/patterns/users.pattern';
 

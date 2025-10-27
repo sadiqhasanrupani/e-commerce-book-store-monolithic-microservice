@@ -14,6 +14,16 @@ export default Joi.object({
   DATABASE_SYNC: Joi.string().required(),
   DATABASE_AUTOLOAD: Joi.string().required(),
 
+
+  STORAGE_ENDPOINT: Joi.string().required(),
+  STORAGE_PORT: Joi.number().required(),
+  STORAGE_USE_SSL: Joi.boolean().required(),
+  STORAGE_ACCESS_KEY: Joi.string().required(),
+  STORAGE_SECRET_KEY: Joi.string().required(),
+  STORAGE_BUCKET: Joi.string().required(),
+  STORAGE_REGION: Joi.string().required(),
+
+
   // JWT_SCRET_KEY: Joi.string().required(),
   // JWT_TOKEN_AUDIENCE: Joi.string().required,
   // JWT_TOKEN_ISSUER: Joi.string().required(),
