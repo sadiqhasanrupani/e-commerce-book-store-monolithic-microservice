@@ -1,0 +1,16 @@
+{
+  "projects": {
+    "global-config": {
+      "type": "library",
+      "root": "libs/global-config",
+      "entryFile": "index",
+      "sourceRoot": "libs/global-config/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/global-config/tsconfig.lib.json"
+      }
+    }
+  },
+  "compilerOptions": {
+    "webpack": true
+  }
+}

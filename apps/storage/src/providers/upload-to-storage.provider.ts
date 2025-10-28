@@ -1,8 +1,14 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, PutObjectCommandInput, GetObjectCommandInput, GetObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  PutObjectCommandInput,
+  GetObjectCommandInput,
+  GetObjectCommand,
+} from '@aws-sdk/client-s3';
 
-import { UploadType } from "@app/contract/storage/types/storage.type";
+import { UploadType } from '@app/contract/storage/types/storage.type';
 
 import { generateFileName } from '@app/contract/utils/books.util';
 import { Readable } from 'typeorm/platform/PlatformTools';
@@ -16,16 +22,23 @@ export class UploadToStorageProvider {
   private readonly region: string;
 
   constructor(private readonly configService: ConfigService) {
-    const rawEndpoint = this.configService.get<string>('s3.storageEndpoint') || '';
+    const rawEndpoint =
+      this.configService.get<string>('s3.storageEndpoint') || '';
     const port = this.configService.get<string>('s3.storagePort') || '9000';
 
-    this.endpoint = rawEndpoint.startsWith('http') || rawEndpoint.startsWith('https') ? rawEndpoint : `http://${rawEndpoint}:${port}`;
+    this.endpoint =
+      rawEndpoint.startsWith('http') || rawEndpoint.startsWith('https')
+        ? rawEndpoint
+        : `http://${rawEndpoint}:${port}`;
 
     this.bucketName = this.configService.get<string>('s3.storageBucket') || '';
-    this.region = this.configService.get<string>('s3.storageRegion') || 'us-east-1';
+    this.region =
+      this.configService.get<string>('s3.storageRegion') || 'us-east-1';
 
-    const accessKeyId = this.configService.get<string>('s3.storageAccessKey') || '';
-    const secretAccessKey = this.configService.get<string>('s3.storageSecretKey') || '';
+    const accessKeyId =
+      this.configService.get<string>('s3.storageAccessKey') || '';
+    const secretAccessKey =
+      this.configService.get<string>('s3.storageSecretKey') || '';
 
     this.s3 = new S3Client({
       region: this.region,
@@ -45,7 +58,10 @@ export class UploadToStorageProvider {
   /**
    * Upload a single file to S3-compatible storage
    */
-  async uploadFile(file: Express.Multer.File, type: UploadType = 'other'): Promise<string> {
+  async uploadFile(
+    file: Express.Multer.File,
+    type: UploadType = 'other',
+  ): Promise<string> {
     if (!file) throw new BadRequestException('File is required');
 
     this.validateFileType(file, type);
@@ -78,7 +94,11 @@ export class UploadToStorageProvider {
     }
   }
 
-  async uploadFileFromBuffer(key: string, buffer: Buffer, contentType: string): Promise<string> {
+  async uploadFileFromBuffer(
+    key: string,
+    buffer: Buffer,
+    contentType: string,
+  ): Promise<string> {
     if (!buffer) throw new BadRequestException('File is required');
 
     const uploadParams: PutObjectCommandInput = {
@@ -107,7 +127,10 @@ export class UploadToStorageProvider {
   /**
    * Upload multiple files to S3-compatible storage
    */
-  async uploadFiles(files: Express.Multer.File[], type: UploadType = 'other'): Promise<string[]> {
+  async uploadFiles(
+    files: Express.Multer.File[],
+    type: UploadType = 'other',
+  ): Promise<string[]> {
     if (!files?.length) throw new BadRequestException('No files provided');
 
     const uploadedUrls: string[] = [];
@@ -119,7 +142,6 @@ export class UploadToStorageProvider {
     return uploadedUrls;
   }
 
-
   /**
    * Validate file type based on allowed MIME types
    */
@@ -129,7 +151,10 @@ export class UploadToStorageProvider {
     const allowedTypes: Record<UploadType, string[]> = {
       photo: ['image/jpeg', 'image/png', 'image/webp'],
       pdf: ['application/pdf'],
-      xls: ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+      xls: [
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ],
       other: [],
     };
 
@@ -154,10 +179,10 @@ export class UploadToStorageProvider {
   }
 
   /**
-     * Get a file from S3/MinIO storage
-     * @param key The file key in the bucket
-     * @returns A readable stream of the file
-     */
+   * Get a file from S3/MinIO storage
+   * @param key The file key in the bucket
+   * @returns A readable stream of the file
+   */
   async getFile(key: string): Promise<Readable> {
     if (!key) {
       throw new BadRequestException('File key is required');
@@ -177,9 +202,9 @@ export class UploadToStorageProvider {
       return result.Body as Readable;
     } catch (err: any) {
       this.logger.error(`❌ Failed to get file: ${key}`);
-      if (err.Code) this.logger.error(`Code: ${err.Code}, Message: ${err.message}`);
+      if (err.Code)
+        this.logger.error(`Code: ${err.Code}, Message: ${err.message}`);
       throw new BadRequestException(`Failed to get file: ${key}`);
     }
   }
-
 }

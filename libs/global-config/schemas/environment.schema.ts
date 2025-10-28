@@ -10,7 +10,12 @@ export default Joi.object({
     .default('development')
     .required(),
 
-  DATABASE_URL: Joi.string().required(),
+  DATABASE_URL: Joi.string().optional(),
+  DATABASE_NAME: Joi.string().required(),
+  DATABASE_USERNAME: Joi.string().required(),
+  DATABASE_PASSWORD: Joi.string().allow('').optional(),
+  DATABASE_PORT: Joi.string().required(),
+  DATABASE_HOST: Joi.string().required(),
   DATABASE_SYNC: Joi.string().required(),
   DATABASE_AUTOLOAD: Joi.string().required(),
 

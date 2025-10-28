@@ -2,7 +2,6 @@ import { NestFactory } from '@nestjs/core';
 import { MagicPagesApiGatewayModule } from './magic-pages-api-gateway.module';
 import { ValidationPipe } from '@nestjs/common';
 
-
 async function bootstrap() {
   const app = await NestFactory.create(MagicPagesApiGatewayModule);
 
@@ -18,8 +17,8 @@ async function bootstrap() {
       transformOptions: {
         enableImplicitConversion: true,
       },
-    })
-  )
+    }),
+  );
 
   // enabling cors for public usage
   app.enableCors();
