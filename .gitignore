@@ -65,9 +65,20 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Docker volumes and data directories
 /postgres-data
+/postgres-data/*
+postgres-data/
+
 /minio-data
+/minio-data/*
+minio-data/
+
 /redis-data
+/redis-data/*
+redis-data/
+
 /mongodb-data
+/mongodb-data/*
+mongodb-data/
 
 # Docker
 docker-compose.override.yml
