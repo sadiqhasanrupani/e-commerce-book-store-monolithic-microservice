@@ -1,6 +1,6 @@
 # Magic Pages - E-Commerce Book Store Backend
 
-A NestJS-based microservices architecture for an e-commerce book store platform. This project uses a monorepo structure with multiple microservices for different business domains.
+A NestJS-based monolithic architecture for an e-commerce book store platform. This project uses a modular monorepo structure with multiple applications (API Gateway, Books Service, and Storage Service) for different business domains.
 
 ## 📋 Table of Contents
 
@@ -18,19 +18,15 @@ A NestJS-based microservices architecture for an e-commerce book store platform.
 
 ## 🏗️ Architecture Overview
 
-This project follows a microservices architecture with the following components:
+This project follows a modular monolithic architecture with the following components:
 
-- **API Gateway**: Main entry point for all client requests
-- **Books Service**: Manages book catalog and inventory
-- **Storage Service**: Handles file uploads and storage (MinIO)
-- **Auth Service**: Authentication and authorization
-- **Users Service**: User management
-- **Orders Service**: Order processing
-- **Payments Service**: Payment processing
-- **Invoice Service**: Invoice generation
-- **Inventory Service**: Stock management
-- **Email Service**: Email notifications
-- **Notification Service**: Push notifications
+- **API Gateway**: Main entry point for all client requests, handles authentication, user management, and routing
+- **Books Service**: Manages book catalog, inventory, and book-related operations
+- **Storage Service**: Handles file uploads and storage using MinIO (S3-compatible storage)
+- **Shared Libraries**:
+  - **Contract Library**: Shared DTOs, interfaces, and patterns across applications
+  - **Database Library**: TypeORM configurations and database utilities
+  - **Global Config**: Environment configuration and validation schemas
 
 ## ✅ Prerequisites
 
@@ -70,23 +66,20 @@ Before starting this project, ensure you have the following installed on your sy
 
 ```
 .
-├── apps/                          # Microservices applications
-│   ├── auth/                      # Authentication service
+├── apps/                          # Application modules
 │   ├── books/                     # Books catalog service
-│   ├── email/                     # Email service
-│   ├── inventory/                 # Inventory management
-│   ├── invoice/                   # Invoice generation
-│   ├── magic-pages-api-gateway/   # API Gateway
-│   ├── notification/              # Notification service
-│   ├── orders/                    # Order management
-│   ├── payments/                  # Payment processing
-│   ├── storage/                   # File storage service
-│   └── users/                     # User management
+│   ├── magic-pages-api-gateway/   # API Gateway (main application)
+│   │   ├── src/
+│   │   │   ├── auth/              # Authentication module
+│   │   │   ├── books/             # Books proxy module
+│   │   │   ├── upload/            # File upload module
+│   │   │   └── users/             # Users module
+│   └── storage/                   # File storage service
 ├── libs/                          # Shared libraries
-│   ├── contract/                  # Contracts and interfaces
-│   ├── database/                  # Database configurations
-│   └── global-config/             # Global configurations
-├── docker-compose.yml             # Docker services definition
+│   ├── contract/                  # Shared DTOs, interfaces, and patterns
+│   ├── database/                  # Database configurations (TypeORM)
+│   └── global-config/             # Global configurations and env schemas
+├── docker-compose.yaml            # Docker services definition
 ├── Dockerfile                     # Container image definition
 ├── package.json                   # Project dependencies
 └── README.md                      # This file
@@ -120,26 +113,31 @@ Create environment configuration files for each service that requires them:
 1. **Create `.env` file in the root directory** (if not exists):
 
 ```bash
+# Node Environment
+NODE_ENV=development
+
 # Database Configuration
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres123
-POSTGRES_DB=magic-pages
-DATABASE_URL=postgresql://postgres:postgres123@localhost:5432/magic-pages
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_USERNAME=postgres
+DATABASE_PASSWORD=postgres123
+DATABASE_NAME=magic-pages
+DATABASE_SYNC=true
+DATABASE_AUTOLOAD=true
 
 # MinIO Storage Configuration
-MINIO_ROOT_USER=minio
-MINIO_ROOT_PASSWORD=minio123
-STORAGE_ENDPOINT=http://localhost:9000
+STORAGE_ENDPOINT=localhost
 STORAGE_PORT=9000
 STORAGE_ACCESS_KEY=minio
 STORAGE_SECRET_KEY=minio123
 STORAGE_BUCKET=the-magic-pages
 STORAGE_USE_SSL=false
-STORAGE_REGION=region
+STORAGE_REGION=us-east-1
 
-# Application Configuration
-NODE_ENV=development
+# Application Ports
 PORT=3000
+BOOKS_PORT=3001
+STORAGE_PORT=3002
 ```
 
 2. **Important**: Make sure to update these values for production environments with secure passwords and proper endpoints.
@@ -191,12 +189,13 @@ Each microservice may require specific environment variables. Here's a comprehen
 
 #### Database Configuration
 ```env
-DATABASE_URL=postgresql://postgres:postgres123@localhost:5432/magic-pages
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres123
-POSTGRES_DB=magic-pages
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_USERNAME=postgres
+DATABASE_PASSWORD=postgres123
+DATABASE_NAME=magic-pages
+DATABASE_SYNC=true
+DATABASE_AUTOLOAD=true
 ```
 
 #### Storage Configuration (MinIO)
@@ -262,22 +261,33 @@ docker-compose up -d
 docker-compose up -d postgres minio
 ```
 
-2. **Run the API Gateway**:
+2. **Run the API Gateway** (includes auth and user management):
 ```bash
 pnpm run start:dev
 ```
 
-3. **Run individual microservices** (in separate terminals):
+3. **Run individual services** (in separate terminals):
 ```bash
 # Books Service
-NODE_ENV=development nest start books --watch
+pnpm run books:dev
 
 # Storage Service
-NODE_ENV=development nest start storage --watch
+pnpm run storage:dev
+```
 
-# Other services...
-NODE_ENV=development nest start auth --watch
-NODE_ENV=development nest start users --watch
+### Debug Mode
+
+Run services in debug mode for debugging with breakpoints:
+
+```bash
+# API Gateway in debug mode
+pnpm run start:debug
+
+# Books Service in debug mode
+pnpm run books:debug
+
+# Storage Service in debug mode
+pnpm run storage:debug
 ```
 
 ### Option 3: Run in Production Mode
@@ -290,21 +300,16 @@ pnpm run build
 pnpm run start:prod
 ```
 
-## 📦 Available Microservices
+## 📦 Available Applications
 
-| Service | Port | Description | Endpoint |
-|---------|------|-------------|----------|
-| API Gateway | 3000 | Main entry point | http://localhost:3000 |
-| Books Service | 3001 | Book catalog management | http://localhost:3001 |
-| Storage Service | 3002 | File storage | http://localhost:3002 |
-| Auth Service | 3003 | Authentication | http://localhost:3003 |
-| Users Service | 3004 | User management | http://localhost:3004 |
-| Orders Service | 3005 | Order processing | http://localhost:3005 |
-| Payments Service | 3006 | Payment processing | http://localhost:3006 |
-| Invoice Service | 3007 | Invoice generation | http://localhost:3007 |
-| Inventory Service | 3008 | Stock management | http://localhost:3008 |
-| Email Service | 3009 | Email notifications | http://localhost:3009 |
-| Notification Service | 3010 | Push notifications | http://localhost:3010 |
+| Application | Port | Description | Endpoint |
+|-------------|------|-------------|----------|
+| API Gateway | 3000 | Main application with auth, users, and routing | http://localhost:3000 |
+| Books Service | 3001 | Book catalog and inventory management | http://localhost:3001 |
+| Storage Service | 3002 | File storage and upload handling | http://localhost:3002 |
+| PostgreSQL | 5432 | Database | localhost:5432 |
+| MinIO API | 9000 | Object storage API | http://localhost:9000 |
+| MinIO Console | 9001 | Storage admin interface | http://localhost:9001 |
 
 ## 📚 API Documentation
 
@@ -319,11 +324,32 @@ Once the application is running, you can access the API documentation:
 ### Available Scripts
 
 ```bash
-# Start development server with hot reload
+# Development - Start API Gateway with hot reload
 pnpm run start:dev
 
-# Start specific service
-NODE_ENV=development nest start <service-name> --watch
+# Development - Start Books Service with hot reload
+pnpm run books:dev
+
+# Development - Start Storage Service with hot reload
+pnpm run storage:dev
+
+# Debug mode - API Gateway
+pnpm run start:debug
+
+# Debug mode - Books Service
+pnpm run books:debug
+
+# Debug mode - Storage Service
+pnpm run storage:debug
+
+# Production - Start API Gateway
+pnpm run start
+
+# Production - Start Books Service
+pnpm run books
+
+# Production - Start Storage Service
+pnpm run storage
 
 # Build the project
 pnpm run build
@@ -347,11 +373,24 @@ pnpm run test:cov
 pnpm run test:e2e
 ```
 
-### Adding a New Microservice
+### Adding a New Module
 
 ```bash
-# Generate a new microservice
-nest g app <service-name>
+# Generate a new module in API Gateway
+nest g module <module-name> apps/magic-pages-api-gateway
+
+# Generate a new controller
+nest g controller <module-name> apps/magic-pages-api-gateway
+
+# Generate a new service
+nest g service <module-name> apps/magic-pages-api-gateway
+```
+
+### Adding a New Application
+
+```bash
+# Generate a new application
+nest g app <app-name>
 ```
 
 ### Code Style
@@ -472,22 +511,27 @@ pnpm run start:dev
 # Check all Docker containers
 docker-compose ps
 
-# View logs for a specific service
+# View logs for API Gateway
+pnpm run start:dev
+
+# View logs for a specific Docker service
 docker-compose logs -f <service-name>
 
-# Example: View books service logs
-docker-compose logs -f books
+# Example: View PostgreSQL logs
+docker-compose logs -f postgres
 
-# Check all logs
-docker-compose logs -f
+# Example: View MinIO logs
+docker-compose logs -f minio
 ```
 
 ### Accessing Services
 
+- **API Gateway**: `http://localhost:3000`
+- **Books Service**: `http://localhost:3001`
+- **Storage Service**: `http://localhost:3002`
 - **PostgreSQL**: `postgresql://postgres:postgres123@localhost:5432/magic-pages`
 - **MinIO Console**: `http://localhost:9001` (user: minio, password: minio123)
 - **MinIO API**: `http://localhost:9000`
-- **API Gateway**: `http://localhost:3000`
 
 ## 📝 Important Notes
 
@@ -506,9 +550,10 @@ docker-compose logs -f
    - Set up monitoring and logging
 
 3. **Data Persistence**:
-   - PostgreSQL data is stored in `./postgres-data`
-   - MinIO data is stored in `./minio-data`
+   - PostgreSQL data is stored in `./postgres-data` (ignored by git)
+   - MinIO data is stored in `./minio-data` (ignored by git)
    - **Do not delete these folders** unless you want to reset data
+   - These directories are excluded from version control
 
 4. **WSL Users** (Windows Subsystem for Linux):
    - The project path shows WSL structure
