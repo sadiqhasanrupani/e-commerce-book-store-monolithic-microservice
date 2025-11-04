@@ -7,7 +7,7 @@ async function bootstrap() {
   const app = await NestFactory.create(MagicPagesApiGatewayModule);
 
   // add a global suffix of api/v1
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix('api/${process.env.API_VERSION}');
 
   // adding a validation pipeline
   app.useGlobalPipes(

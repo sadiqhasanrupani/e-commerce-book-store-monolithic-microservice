@@ -83,8 +83,6 @@ export class BooksService {
 
       if (files?.files && files?.files?.length > 0) {
         urls = await this.uploadBookFilesProvider.uploadPdfs(files.files);
-
-        console.log('urls: ', urls)
       }
 
       if (urls.length > 0) {
