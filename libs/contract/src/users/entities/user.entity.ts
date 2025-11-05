@@ -1,38 +1,46 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
-import { IsEnum, IsString, Length } from 'class-validator';
-import { Gender } from '../enums/gender.enum';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+} from 'typeorm';
 
-@Entity('users')
+@Entity({ name: 'users' })
 export class User {
-  @PrimaryGeneratedColumn()
-  id: string;
+  @PrimaryGeneratedColumn({ name: 'user_id' })
+  userId: number;
+
+  @Index({ unique: true })
+  @Column({ type: 'varchar', length: 255, nullable: false })
+  email: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'password_hash' })
+  passwordHash?: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'google_id' })
+  googleId?: string | null;
 
   @Column({
     type: 'varchar',
-    length: 120,
-    name: 'first_name',
-    nullable: false,
+    length: 10,
+    default: 'buyer',
   })
-  @IsString()
-  @Length(1, 120)
-  firstName: string;
+  role: 'buyer' | 'admin';
 
-  @Column({
-    type: 'varchar',
-    length: 120,
-    name: 'last_name',
-    nullable: false,
-  })
-  @IsString()
-  @Length(1, 120)
-  lastName: string;
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  firstName?: string;
 
-  @Column({
-    type: 'varchar',
-    length: 120,
-    name: 'gender',
-    nullable: false,
-  })
-  @IsEnum(Gender, { message: 'gender much be male, female or other' })
-  gender: Gender;
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  lastName?: string;
+
+  @Column({ type: 'boolean', default: false, name: 'is_deleted' })
+  isDeleted: boolean;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
 }
