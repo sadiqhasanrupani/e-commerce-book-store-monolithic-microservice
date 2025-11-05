@@ -1,24 +1,27 @@
-import { IsEmail, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
-import { Gender } from '../enums/gender.enum';
+import { IsEmail, IsOptional, IsString, IsEnum, MinLength, ValidateIf } from 'class-validator';
 
 export class CreateUserDto {
-  @IsOptional()
-  @IsNumber()
-  id?: number;
-
-  @IsNotEmpty()
-  @IsString()
-  firstName: string;
-  
-  @IsNotEmpty()
-  @IsString()
-  lastName: string;
-  
-  @IsNotEmpty()
-  @IsString()
   @IsEmail()
   email: string;
 
-  @IsEnum(Gender, { message: `Gender must be "male","female" or "other"` })
-  gender: Gender;
+  @ValidateIf((o: CreateUserDto) => !o.googleId)
+  @IsString()
+  @MinLength(8, { message: 'Password must be at least 8 characters' })
+  password?: string;
+
+  @IsOptional()
+  @IsString()
+  googleId?: string;
+
+  @IsOptional()
+  @IsEnum(['buyer', 'admin'], { message: 'Role must be buyer or admin' })
+  role?: 'buyer' | 'admin';
+
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  lastName?: string;
 }

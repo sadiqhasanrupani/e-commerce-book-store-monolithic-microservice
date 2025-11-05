@@ -1,19 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ClientsModule, Transport } from '@nestjs/microservices';
 
-import { UsersService } from './users.service';
+import { UsersService } from './providers/users.service.ts';
 import { UsersController } from './users.controller';
 
 @Module({
-  imports: [
-    ClientsModule.register([
-      {
-        name: 'USER_CLIENT',
-        transport: Transport.TCP,
-        options: { port: 3001 },
-      }
-    ]),
-  ],
   controllers: [UsersController],
   providers: [UsersService],
 })

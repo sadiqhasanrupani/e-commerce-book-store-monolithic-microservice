@@ -17,6 +17,13 @@ import { CreateBookData } from '@app/contract/books/types/books.type';
  * including creation, retrieval, and updates.
  */
 
+/**
+ * TODO
+ * 1. Complete the book's get api
+ * 2. Update book's api
+ * 3. Delete book's api
+ */
+
 const DUMMY_BOOK: Book = {
   id: 0,
   author: {
@@ -110,9 +117,11 @@ export class BooksService {
    * @returns An array of all Book entities.
    */
   async getAllBooks(): Promise<Book[]> {
-    // const allBook = await this.bookRepository.find();
-    // return allBook;
-    //
+    const allBook = await this.bookRepository.find({
+       
+    });
+    return allBook;
+
     return [];
   }
 
