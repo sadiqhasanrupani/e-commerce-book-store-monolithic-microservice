@@ -20,6 +20,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { CreateUserProvider } from './create-user.provider';
 import { User } from '@app/contract/users/entities/user.entity';
 import { CreateUserDto } from '@app/contract/users/dtos/create-user.dto';
+import { Roles } from '@app/contract/users/enums/roles.enum';
 
 /**
  * Type-safe mock for DataSource with transaction method
@@ -85,7 +86,7 @@ describe('CreateUserProvider', () => {
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: DataSource, useValue: mockDataSource },
         { provide: 'AUDIT_SERVICE', useValue: mockAuditService },
-        { provide: EventEmitter2, useValue: mockEventEmitter as unknown as EventEmitter2 }, // eslint-disable-line
+        { provide: EventEmitter2, useValue: mockEventEmitter as unknown as EventEmitter2 },
       ],
     }).compile();
 
@@ -104,7 +105,7 @@ describe('CreateUserProvider', () => {
     const dto: CreateUserDto = {
       email: 'test@example.com',
       password: 'securepass',
-      role: 'buyer',
+      role: Roles.BUYER,
     };
 
     userRepo.findOne.mockResolvedValue(null);
@@ -183,13 +184,13 @@ describe('CreateUserProvider', () => {
     userRepo.create.mockReturnValue({
       email: dto.email,
       googleId: dto.googleId,
-      role: 'buyer',
+      role: dto.role,
     } as User);
     userRepo.save.mockResolvedValue({
       userId: 2,
       email: dto.email,
       googleId: dto.googleId,
-      role: 'buyer',
+      role: Roles.BUYER,
     } as User);
 
     const result = await provider.createUser(dto);

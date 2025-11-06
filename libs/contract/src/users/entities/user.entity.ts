@@ -1,11 +1,8 @@
-import {
-  Entity,
-  Column,
-  PrimaryGeneratedColumn,
-  CreateDateColumn,
-  UpdateDateColumn,
-  Index,
-} from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
+
+import { Roles } from '../enums/roles.enum';
+import { IsEnum } from 'class-validator';
+import { Gender } from '../enums/gender.enum';
 
 @Entity({ name: 'users' })
 export class User {
@@ -23,11 +20,21 @@ export class User {
   googleId?: string | null;
 
   @Column({
-    type: 'varchar',
-    length: 10,
-    default: 'buyer',
+    type: 'enum',
+    enum: Roles,
+    default: Roles.BUYER,
+    nullable: false,
   })
-  role: 'buyer' | 'admin';
+  @IsEnum(Roles, { message: 'Role must be either BUYER or ADMIN' })
+  role: Roles;
+
+  @Column({
+    type: 'enum',
+    enum: Gender,
+    nullable: false,
+  })
+  @IsEnum(Gender, { message: 'Gender must be male, female or other' })
+  gender: Gender;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   firstName?: string;

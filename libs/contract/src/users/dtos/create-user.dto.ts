@@ -1,7 +1,13 @@
-import { IsEmail, IsOptional, IsString, IsEnum, MinLength, ValidateIf } from 'class-validator';
+import { IsEmail, IsOptional, IsString, IsEnum, MinLength, ValidateIf, IsNotEmpty } from 'class-validator';
+import { Transform } from 'class-transformer';
+
+import { Roles } from '../enums/roles.enum';
+import { Gender } from '../enums/gender.enum';
 
 export class CreateUserDto {
   @IsEmail()
+  @IsNotEmpty()
+  @Transform(({ value }: { value: string }) => value.trim())
   email: string;
 
   @ValidateIf((o: CreateUserDto) => !o.googleId)
@@ -14,8 +20,11 @@ export class CreateUserDto {
   googleId?: string;
 
   @IsOptional()
-  @IsEnum(['buyer', 'admin'], { message: 'Role must be buyer or admin' })
-  role?: 'buyer' | 'admin';
+  @IsEnum(Roles, { message: 'Role must be BUYER or ADMIN' })
+  role?: Roles;
+
+  @IsEnum(Gender, { message: 'Gender must be male, female or other' })
+  gender: Gender;
 
   @IsOptional()
   @IsString()

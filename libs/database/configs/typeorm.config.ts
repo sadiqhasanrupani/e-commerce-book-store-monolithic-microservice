@@ -7,9 +7,7 @@ const typeOrmOptions: TypeOrmModuleAsyncOptions = {
   useFactory: (configService: ConfigService) => {
     const databaseUrl = configService.get<string>('database.databaseUrl');
     const synchronize = configService.get<boolean>('database.synchronize');
-    const autoLoadEntities = configService.get<boolean>(
-      'database.autoLoadEntities',
-    );
+    const autoLoadEntities = configService.get<boolean>('database.autoLoadEntities');
 
     return {
       type: 'postgres',

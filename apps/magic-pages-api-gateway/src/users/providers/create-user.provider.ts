@@ -12,13 +12,16 @@ export class CreateUserProvider {
      * */
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-  ) {
-    // write something here
-  }
+  ) { } // eslint-disable-line
 
   async createUser(createUserDto: CreateUserDto): Promise<User> {
-    const user = this.userRepository.create(createUserDto);
+    // Check if that email already registered
+    // Check if the payload contains googleId
+    // If googleId present then redirect to created with google user service
+    // If not Bcrypt the password
+    // Save the user with default role as Buyer
 
+    const user = this.userRepository.create(createUserDto);
     return await this.userRepository.save(user);
   }
 }
