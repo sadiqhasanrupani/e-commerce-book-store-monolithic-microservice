@@ -1,16 +1,14 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { Book } from '@app/contract/books/entities/book.entity';
+import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { UpdateBookDto } from '@app/contract/books/dtos/update-book.dto';
-
 
 import { CreateBookProvider } from './create-book.provider';
 import { UploadBookFilesProvider } from './upload-book-files.provider';
 
-import { CreateBookDto } from '@app/contract/books/dtos/create-book.dto';
-import { BookAvailability } from '@app/contract/books/enums/book-avaliability.enum';
-import { BookFormat } from '@app/contract/books/enums/book-format.enum';
-import { BookGenre } from '@app/contract/books/enums/book-genres.enum';
 import { CreateBookData } from '@app/contract/books/types/books.type';
+import { Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+
+import { Book } from '@app/contract/books/entities/book.entity';
 
 /**
  * Service responsible for handling all operations related to books,
@@ -23,36 +21,6 @@ import { CreateBookData } from '@app/contract/books/types/books.type';
  * 2. Update book's api
  * 3. Delete book's api
  */
-
-const DUMMY_BOOK: Book = {
-  id: 0,
-  author: {
-    id: 1,
-    bio: "bio",
-    birthDate: new Date(),
-    books: [],
-    name: 'bookName',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    nationality: "Indian",
-  },
-  authorId: 1,
-  authorName: "autherName",
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  availability: BookAvailability.IN_STOCK,
-  fileUrl: [],
-  format: BookFormat.EBOOK,
-  genre: BookGenre.ART,
-  snapshotUrl: ['something.png'],
-  price: 90,
-  publishedDate: new Date(),
-  rating: 5,
-  title: "bookTitle",
-  description: "description",
-
-}
-
 
 @Injectable()
 export class BooksService {
@@ -70,7 +38,12 @@ export class BooksService {
      * */
     private readonly uploadBookFilesProvider: UploadBookFilesProvider,
 
-  ) { }
+    /**
+     * Inject userRepository
+     * */
+    @InjectRepository(Book)
+    private readonly bookRepository: Repository<Book>,
+  ) { } //eslint-disable-line
 
   /**
    * Create a new book entry in the database.
@@ -80,10 +53,7 @@ export class BooksService {
    * @param file - Optional file object containing buffer, filename, mimetype
    * @returns The created Book entity.
    */
-  async createBook(
-    data: CreateBookData
-  ): Promise<Book> {
-
+  async createBook(data: CreateBookData): Promise<Book> {
     try {
       const { createBookDto, files } = data;
       let urls: string[] = [];
@@ -132,10 +102,8 @@ export class BooksService {
    * @param id - The ID of the book to retrieve.
    * @returns The Book entity if found, otherwise null.
    */
-  async getBookById(_id: number): Promise<Book | null> {
-    // return await this.bookRepository.findOneBy({ id });
-
-    return DUMMY_BOOK;
+  async getBookById(id: number): Promise<Book | null> {
+    return await this.bookRepository.findOneBy({ id });
   }
 
   /**
@@ -151,26 +119,24 @@ export class BooksService {
    *
    * @throws NotFoundException if the book with the given ID does not exist.
    */
-  async updateBook(_id: number, _updateBookDto: UpdateBookDto): Promise<Book> {
-    // const book = await this.bookRepository.findOneBy({ id });
-    //
-    // if (!book) {
-    //   throw new NotFoundException(`Book with ID ${id} not found`);
-    // }
-    //
-    // // Merge new data into existing book entity
-    // const updatedBook = this.bookRepository.merge(book, updateBookDto);
-    //
-    // return await this.bookRepository.save(updatedBook);
-    //
-    return DUMMY_BOOK;
+  async updateBook(id: number, updateBookDto: UpdateBookDto): Promise<Book> {
+    const book = await this.bookRepository.findOneBy({ id });
+
+    if (!book) {
+      throw new NotFoundException(`Book with ID ${id} not found`);
+    }
+
+    // Merge new data into existing book entity
+    const updatedBook = this.bookRepository.merge(book, updateBookDto);
+
+    return await this.bookRepository.save(updatedBook);
   }
 
-  async deleteBook(_id: number) {
+  async deleteBook(_id: number) { //eslint-disable-line
     return 'delete book';
   }
 
-  async putBook(_id: number, _data: any) {
+  async putBook(_id: number, _data: any) { //eslint-disable-line
     return '';
   }
 }

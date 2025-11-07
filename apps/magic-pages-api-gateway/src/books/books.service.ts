@@ -14,9 +14,9 @@ export class BooksService {
     /**
      * Inject clientProxy
      * */
-    @Inject(BOOK_PATTERNS.REGISTER)
-    private readonly clientProxy: ClientProxy
-  ) { }
+    @Inject(BOOKS_CONFIG.CLIENTS.name)
+    private readonly clientProxy: ClientProxy,
+  ) { } // eslint-disable-line
 
   create(bookData: CreateBookData) {
     return this.clientProxy.send(BOOK_PATTERNS.CREATE, bookData);

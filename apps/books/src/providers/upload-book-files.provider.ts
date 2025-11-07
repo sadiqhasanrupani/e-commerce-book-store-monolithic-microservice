@@ -30,13 +30,19 @@ export class UploadBookFilesProvider {
       const urls = await Promise.all(files.map((file) => this.uploadPdf(file)));
 
       return urls;
-    } catch (error) {
+    } catch (error: unknown) {
+      let message = 'Unknown error';
+
+      if (error instanceof Error) {
+        message = error.message;
+      }
+
       // Option 2: Generic HttpException (if you want custom status)
       throw new HttpException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
           message: 'Failed to upload one or more PDF files',
-          error: error.message || 'Unknown error',
+          error: message,
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );

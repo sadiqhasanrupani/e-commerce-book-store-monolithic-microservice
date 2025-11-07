@@ -10,6 +10,5 @@ import { UploadToStorageProvider } from './providers/upload-to-storage.provider'
 @Module({
   imports: [GlobalConfigModule],
   controllers: [StorageController],
-  providers: [StorageService,  UploadToStorageProvider],
+  providers: [StorageService, UploadToStorageProvider],
 })
-export class StorageModule { }

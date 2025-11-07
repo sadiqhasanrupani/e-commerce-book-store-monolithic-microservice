@@ -6,8 +6,8 @@ import { Gender } from '../enums/gender.enum';
 
 @Entity({ name: 'users' })
 export class User {
-  @PrimaryGeneratedColumn({ name: 'user_id' })
-  userId: number;
+  @PrimaryGeneratedColumn()
+  id: number;
 
   @Index({ unique: true })
   @Column({ type: 'varchar', length: 255, nullable: false })
