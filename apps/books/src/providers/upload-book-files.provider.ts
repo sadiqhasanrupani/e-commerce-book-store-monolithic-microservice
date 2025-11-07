@@ -8,11 +8,7 @@ import { STORAGE_PATTERN } from '@app/contract/storage/patterns/storage.pattern'
 // types
 import { BufferType } from '../types/upload-book-file.type';
 import { UploadFileRequest, UploadFileResponse } from '../types/storage.type';
-
-/* Todo:
- * [x] Add a uploadBuffers method so generated PNG buffers can be uploaded too. Keep the storage 
- * client usage consistent.
-*/
+import { STORAGE_CONFIG } from '@app/contract/storage/configs/storage.config';
 
 @Injectable()
 export class UploadBookFilesProvider {
@@ -20,10 +16,9 @@ export class UploadBookFilesProvider {
     /**
      * Injecting storageClient
      * */
-    @Inject('STORAGE_CLIENT')
+    @Inject(STORAGE_CONFIG.CLIENTS.name)
     private readonly storageClient: ClientProxy,
-
-  ) { }
+  ) { } //eslint-disable-line
 
   /**
    * Upload multiple pdf file (from multer).

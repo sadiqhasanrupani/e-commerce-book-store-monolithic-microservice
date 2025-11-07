@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { ClientsModule, Transport } from '@nestjs/microservices';
+import { ClientsModule } from '@nestjs/microservices';
 
-import { BOOK_PATTERNS } from '@app/contract/books/patterns/books.pattern';
+import { BOOKS_CONFIG } from '@app/contract/books/config/books.config';
 
 import { BooksService } from './books.service';
 import { BooksController } from './books.controller';
@@ -12,16 +12,16 @@ import { UploadModule } from '../upload/upload.module';
     UploadModule,
     ClientsModule.register([
       {
-        name: BOOK_PATTERNS.REGISTER,
-        transport: Transport.TCP,
+        name: BOOKS_CONFIG.CLIENTS.name,
+        transport: BOOKS_CONFIG.CLIENTS.transport,
         options: {
-          port: BOOK_PATTERNS.PORT,
-          host: BOOK_PATTERNS.HOST,
-        }
-      }
-    ])
+          port: BOOKS_CONFIG.CLIENTS.options.port,
+          host: BOOKS_CONFIG.CLIENTS.options.host,
+        },
+      },
+    ]),
   ],
   controllers: [BooksController],
   providers: [BooksService],
 })
-export class BooksModule { }
+export class BooksModule { } //eslint-disable-line

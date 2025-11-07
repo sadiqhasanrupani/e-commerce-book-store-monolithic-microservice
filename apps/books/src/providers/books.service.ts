@@ -93,22 +93,25 @@ export class BooksService {
       }
 
       if (urls.length > 0) {
-
       }
 
-      return await this.createBookProvider.createBook(createBookDto)
+      return await this.createBookProvider.createBook(createBookDto);
+    } catch (error: unknown) {
+      let message = 'Unknown error';
 
-    } catch (error) {
+      if (error instanceof Error) {
+        message = error.message;
+      }
+
       throw new HttpException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
           message: 'Failed to create book data',
-          error: error.message || 'Unknown error',
+          error: message,
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
-      )
+      );
     }
-
   }
 
   /**
@@ -117,12 +120,10 @@ export class BooksService {
    * @returns An array of all Book entities.
    */
   async getAllBooks(): Promise<Book[]> {
-    const allBook = await this.bookRepository.find({
-       
-    });
-    return allBook;
+    // const allBook = await this.bookRepository.find({});
+    // return allBook;
 
-    return [];
+    return Promise.resolve([]);
   }
 
   /**

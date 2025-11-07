@@ -6,6 +6,7 @@ import { UpdateBookDto } from '@app/contract/books/dtos/update-book.dto';
 
 import { BOOK_PATTERNS } from '@app/contract/books/patterns/books.pattern';
 import { CreateBookData } from '@app/contract/books/types/books.type';
+import { BOOKS_CONFIG } from '@app/contract/books/config/books.config';
 
 @Injectable()
 export class BooksService {
