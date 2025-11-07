@@ -12,11 +12,17 @@ export class UsersService {
      * Inject createUserProvider
      * */
     private readonly createUserProvider: CreateUserProvider,
-  ) {
-    // something
-  }
+  ) { } //eslint-disable-line
 
   async create(createUserDto: CreateUserDto): Promise<User> {
     return this.createUserProvider.createUser(createUserDto);
   }
+
+  findAll() { } //eslint-disable-line
+
+  findOne(id: number) { } //eslint-disable-line
+
+  update(id: number, updateUserDto: UpdateUserDto) { } //eslint-disable-line
+
+  remove(id: number) { } //eslint-disable-line
 }

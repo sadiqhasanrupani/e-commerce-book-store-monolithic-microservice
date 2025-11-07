@@ -63,17 +63,14 @@ export class UploadBookFilesProvider {
     };
 
     const response = await firstValueFrom(
-      this.storageClient.send<UploadFileResponse, UploadFileRequest>(
-        STORAGE_PATTERN.UPLOAD,
-        payload,
-      ),
+      this.storageClient.send<UploadFileResponse, UploadFileRequest>(STORAGE_PATTERN.UPLOAD, payload),
     );
 
     return response.url;
   }
 
   /**
-   * Upload multiple buffers (or in the sense snapshot pngs) 
+   * Upload multiple buffers (or in the sense snapshot pngs)
    * @param buffers list of objects {buffer, filename, mimetype}
    * @returns array of uploaded URLs
    * */
@@ -91,27 +88,30 @@ export class UploadBookFilesProvider {
           const payload: UploadFileRequest = {
             key: `/books/snapshots/${Date.now()}-${b.filename}`,
             fileBuffer: b.buffer,
-            contentType: b.mimetype
-          }
+            contentType: b.mimetype,
+          };
 
           const resp = await firstValueFrom(
-            this.storageClient.send<UploadFileResponse, UploadFileRequest>(
-              STORAGE_PATTERN.UPLOAD,
-              payload
-            )
-          )
+            this.storageClient.send<UploadFileResponse, UploadFileRequest>(STORAGE_PATTERN.UPLOAD, payload),
+          );
 
-          return resp.url
-        })
-      )
+          return resp.url;
+        }),
+      );
 
       return urls;
-    } catch (error) {
+    } catch (error: unknown) {
+      let message = 'Unknown error';
+
+      if (error instanceof Error) {
+        message = error.message;
+      }
+
       throw new HttpException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
           message: 'Failed to upload snapshot images',
-          error: error.message || 'Unknown error',
+          error: message,
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );

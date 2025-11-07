@@ -31,6 +31,7 @@ export class BooksService {
   }
 
   update(id: number, updateBookDto: UpdateBookDto) {
+    console.log(updateBookDto);
     return `This action updates a #${id} book`;
   }
 
