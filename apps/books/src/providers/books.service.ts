@@ -56,13 +56,10 @@ export class BooksService {
   async createBook(data: CreateBookData): Promise<Book> {
     try {
       const { createBookDto, files } = data;
-      let urls: string[] = [];
+      let url: string = '';
 
-      if (files?.files && files?.files?.length > 0) {
-        urls = await this.uploadBookFilesProvider.uploadPdfs(files.files);
-      }
-
-      if (urls.length > 0) {
+      if (files?.file) {
+        url = await this.uploadBookFilesProvider.uploadPdf(files.file);
       }
 
       return await this.createBookProvider.createBook(createBookDto);

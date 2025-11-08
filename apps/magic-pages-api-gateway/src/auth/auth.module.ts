@@ -1,18 +1,26 @@
-import { Module } from '@nestjs/common';
-import { ClientsModule, Transport } from '@nestjs/microservices';
+import { forwardRef, Module } from '@nestjs/common';
 
-import { AuthService } from './auth.service';
+// modules
+import { UsersModule } from '../users/users.module';
+
+// controlllers
 import { AuthController } from './auth.controller';
 
+// providers
+import { AuthService } from './providers/auth.service';
+import { HashingProvider } from './providers/hashing.provider';
+import { BcryptProvider } from './providers/bcrypt.provider';
+
 @Module({
-  imports: [ClientsModule.register([
-    {
-      name: "AUTH_CLIENT",
-      transport: Transport.TCP,
-      options: { port: 3002 },
-    }
-  ])],
+  imports: [forwardRef(() => UsersModule)],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [
+    AuthService,
+    {
+      provide: HashingProvider,
+      useClass: BcryptProvider,
+    },
+  ],
+  exports: [AuthService, HashingProvider],
 })
-export class AuthModule {}
+export class AuthModule { } // eslint-disable-line

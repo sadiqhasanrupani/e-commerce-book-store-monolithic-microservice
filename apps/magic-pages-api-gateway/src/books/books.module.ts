@@ -1,11 +1,18 @@
 import { Module } from '@nestjs/common';
 import { ClientsModule } from '@nestjs/microservices';
 
-import { BOOKS_CONFIG } from '@app/contract/books/config/books.config';
-
-import { BooksService } from './books.service';
-import { BooksController } from './books.controller';
+// modules
 import { UploadModule } from '../upload/upload.module';
+
+// controllers
+import { BooksController } from './books.controller';
+
+// providers
+import { BooksService } from './providers/books.service';
+import { CreateBookProvider } from './providers/create-book.provider';
+
+// configs
+import { BOOKS_CONFIG } from '@app/contract/books/config/books.config';
 
 @Module({
   imports: [
@@ -22,6 +29,6 @@ import { UploadModule } from '../upload/upload.module';
     ]),
   ],
   controllers: [BooksController],
-  providers: [BooksService],
+  providers: [BooksService, CreateBookProvider],
 })
 export class BooksModule { } //eslint-disable-line

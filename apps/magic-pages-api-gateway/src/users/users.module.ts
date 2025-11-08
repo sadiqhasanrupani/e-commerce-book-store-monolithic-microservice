@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+// providers
+import { AuthModule } from '../auth/auth.module';
+
 import { UsersController } from './users.controller';
 
 // providers
@@ -13,7 +16,7 @@ import { RemoveUserProvider } from './providers/remove-user.provider';
 import { User } from '@app/contract/users/entities/user.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User])],
+  imports: [TypeOrmModule.forFeature([User]), AuthModule],
   controllers: [UsersController],
   providers: [UsersService, CreateUserProvider, UpdateUserProvider, FindUserProvider, RemoveUserProvider],
   exports: [TypeOrmModule],

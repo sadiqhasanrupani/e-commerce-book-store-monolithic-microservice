@@ -11,17 +11,15 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
-import { BooksService } from './books.service';
+
+import { BooksService } from './providers/books.service';
 
 import { CreateBookDto } from '@app/contract/books/dtos/create-book.dto';
 import { UpdateBookDto } from '@app/contract/books/dtos/update-book.dto';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiHeaders, ApiOperation } from '@nestjs/swagger';
 
-import { UploadService } from '../upload/providers/upload.service';
-
 import { FilesValidationPipe } from '@app/contract/pipes/file-validation.pipe';
-import { CreateBookData } from '@app/contract/books/types/books.type';
 
 @Controller('books')
 export class BooksController {
@@ -30,15 +28,14 @@ export class BooksController {
      * Injecting Book Service
      * */
     private readonly booksService: BooksService,
-  ) { }
+  ) { } //eslint-disable-line
 
   @UseInterceptors(
-    FileFieldsInterceptor(
-      [
-        { name: 'images', maxCount: 10 },
-        { name: 'file', maxCount: 1 }
-      ]
-    )
+    FileFieldsInterceptor([
+      { name: 'bookCover', maxCount: 1 },
+      { name: 'snapshots', maxCount: 5 },
+      { name: 'file', maxCount: 1 },
+    ]),
   )
   @ApiHeaders([
     {
@@ -50,35 +47,35 @@ export class BooksController {
   @Post()
   create(
     @Body() createBookDto: CreateBookDto,
-    @UploadedFiles(new FilesValidationPipe({
-      images: [
-        'image/gif',
-        'image/jpeg',
-        'image/png',
-      ],
-      file: [
-        'application/pdf',
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      ],
-    }))
+    @UploadedFiles(
+      new FilesValidationPipe({
+        images: ['image/gif', 'image/jpeg', 'image/png'],
+        file: [
+          'application/pdf',
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ],
+      }),
+    )
     files?: {
-      images?: Express.Multer.File[],
-      files?: Express.Multer.File[]
+      bookCover: Express.Multer.File;
+      snapshots?: Express.Multer.File[];
+      file?: Express.Multer.File;
     },
   ) {
-
     try {
       return this.booksService.create({
         files,
-        createBookDto
+        createBookDto,
       });
+    } catch (error: unknown) {
+      let message = 'something went wrong in book service';
 
-    } catch (error) {
-      throw new HttpException(
-        { message: "something went wrong in book service" },
-        HttpStatus.INTERNAL_SERVER_ERROR
-      )
+      if (error instanceof Error) {
+        message = error.message;
+      }
+
+      throw new HttpException({ message }, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 

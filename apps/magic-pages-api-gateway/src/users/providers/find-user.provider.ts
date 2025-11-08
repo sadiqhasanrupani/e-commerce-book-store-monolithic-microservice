@@ -1,4 +1,106 @@
-import { Injectable } from '@nestjs/common';
+import { User } from '@app/contract/users/entities/user.entity';
+import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 @Injectable()
-export class FindUserProvider { }
+export class FindUserProvider {
+  constructor(
+    /**
+     * Inject userRespository
+     * */
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+  ) { } //eslint-disable-line
+
+  async findByEmail(email: string): Promise<User[]> {
+    try {
+      const users = await this.userRepository.findBy({
+        email: email,
+      });
+
+      if (Array.isArray(users) && users.length === 0) {
+        throw new NotFoundException(`The email ${email} doesn't exist in the user entry`);
+      }
+
+      return users;
+    } catch (error: unknown) {
+      let message = 'Something went wrong';
+
+      if (error instanceof Error) {
+        message = error.message;
+      }
+
+      throw new HttpException(
+        {
+          status: HttpStatus.BAD_REQUEST,
+          error: message,
+        },
+        HttpStatus.BAD_REQUEST,
+        {
+          cause: error,
+        },
+      );
+    }
+  }
+
+  async findAll() {
+    try {
+      const users = await this.userRepository.find();
+
+      if (Array.isArray(users) && users.length === 0) {
+        throw new NotFoundException(`User's storage are empty`);
+      }
+
+      return users;
+    } catch (error: unknown) {
+      let message = 'Something went wrong';
+
+      if (error instanceof Error) {
+        message = error.message;
+      }
+
+      throw new HttpException(
+        {
+          status: HttpStatus.BAD_REQUEST,
+          error: message,
+        },
+        HttpStatus.BAD_REQUEST,
+        {
+          cause: error,
+        },
+      );
+    }
+  }
+
+  async findById(id: number) {
+    try {
+      const users = await this.userRepository.findBy({
+        id,
+      });
+
+      if (Array.isArray(users) && users.length === 0) {
+        throw new NotFoundException(`The user with id ${id} doesn't exist`);
+      }
+
+      return users;
+    } catch (error: unknown) {
+      let message = 'Something went wrong';
+
+      if (error instanceof Error) {
+        message = error.message;
+      }
+
+      throw new HttpException(
+        {
+          status: HttpStatus.BAD_REQUEST,
+          error: message,
+        },
+        HttpStatus.BAD_REQUEST,
+        {
+          cause: error,
+        },
+      );
+    }
+  }
+}
