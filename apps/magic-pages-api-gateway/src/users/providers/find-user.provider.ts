@@ -13,17 +13,13 @@ export class FindUserProvider {
     private readonly userRepository: Repository<User>,
   ) { } //eslint-disable-line
 
-  async findByEmail(email: string): Promise<User[]> {
+  async findByEmail(email: string): Promise<User | null> {
     try {
-      const users = await this.userRepository.findBy({
+      const user = await this.userRepository.findOneBy({
         email: email,
       });
 
-      if (Array.isArray(users) && users.length === 0) {
-        throw new NotFoundException(`The email ${email} doesn't exist in the user entry`);
-      }
-
-      return users;
+      return user;
     } catch (error: unknown) {
       let message = 'Something went wrong';
 

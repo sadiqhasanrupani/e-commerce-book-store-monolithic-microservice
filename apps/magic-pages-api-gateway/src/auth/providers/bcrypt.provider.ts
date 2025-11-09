@@ -6,8 +6,8 @@ import { HashingProvider } from './hashing.provider';
 export class BcryptProvider implements HashingProvider {
   public async hashPassword(data: string | Buffer): Promise<string> {
     try {
-      const salt: string = await bcrypt.genSalt(8); // eslint-disable-line
-      return await bcrypt.hash(data.toString(), salt); // eslint-disable-line
+      const salt: string = await bcrypt.genSalt(8);
+      return await bcrypt.hash(data.toString(), salt);
     } catch (err: unknown) {
       if (err instanceof Error) {
         // safe access of err.message
@@ -19,7 +19,7 @@ export class BcryptProvider implements HashingProvider {
 
   public async comparePassword(data: string | Buffer, encrypted: string): Promise<boolean> {
     try {
-      return await bcrypt.compare(data, encrypted); // eslint-disable-line
+      return await bcrypt.compare(data, encrypted);
     } catch (err: unknown) {
       if (err instanceof Error) {
         throw new InternalServerErrorException(`Password comparison failed: ${err.message}`, { cause: err });

@@ -2,12 +2,11 @@ import { NestFactory } from '@nestjs/core';
 import { MagicPagesApiGatewayModule } from './magic-pages-api-gateway.module';
 import { ValidationPipe } from '@nestjs/common';
 
-
 async function bootstrap() {
   const app = await NestFactory.create(MagicPagesApiGatewayModule);
 
   // add a global suffix of api/v1
-  app.setGlobalPrefix('api/${process.env.API_VERSION}');
+  app.setGlobalPrefix(`api/${globalThis.process.env.API_VERSION}`);
 
   // adding a validation pipeline
   app.useGlobalPipes(
@@ -18,12 +17,14 @@ async function bootstrap() {
       transformOptions: {
         enableImplicitConversion: true,
       },
-    })
-  )
+    }),
+  );
 
   // enabling cors for public usage
-  app.enableCors();
+  app.enableCors({
+    origin: globalThis.process.env.ORIGIN,
+  });
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT ?? 8080);
 }
-bootstrap();
+bootstrap(); // eslint-disable-line

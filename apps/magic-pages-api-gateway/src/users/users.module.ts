@@ -19,6 +19,6 @@ import { User } from '@app/contract/users/entities/user.entity';
   imports: [TypeOrmModule.forFeature([User]), AuthModule],
   controllers: [UsersController],
   providers: [UsersService, CreateUserProvider, UpdateUserProvider, FindUserProvider, RemoveUserProvider],
-  exports: [TypeOrmModule],
+  exports: [TypeOrmModule, UsersService],
 })
 export class UsersModule { } //eslint-disable-line

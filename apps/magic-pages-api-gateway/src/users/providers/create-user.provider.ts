@@ -1,11 +1,10 @@
-import { CreateUserDto } from '@app/contract/users/dtos/create-user.dto';
 import { User } from '@app/contract/users/entities/user.entity';
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FindUserProvider } from './find-user.provider';
 import { Roles } from '@app/contract/users/enums/roles.enum';
-import { HashingProvider } from '../../auth/providers/hashing.provider';
+import { CreateUserInput } from '@app/contract/users/types/create-user.type';
 
 @Injectable()
 export class CreateUserProvider {
@@ -20,30 +19,16 @@ export class CreateUserProvider {
      * Inject findUserProvider
      * */
     private readonly findUserProvider: FindUserProvider,
-
-    /**
-     * Inject hashingProvider
-     * */
-    private readonly hashingProvider: HashingProvider,
   ) { } // eslint-disable-line
 
-  async createUser(dto: CreateUserDto): Promise<User> {
-    const existing = await this.findUserProvider.findByEmail(dto.email);
+  async createUser(input: CreateUserInput): Promise<User> {
+    const existing = await this.findUserProvider.findByEmail(input.email);
     if (existing) throw new ConflictException('Email already registered');
 
-    let passwordHash: string | null = null;
-    if (!dto.googleId) {
-      if (typeof dto.password === 'string' && dto.password.trim().length > 0) {
-        passwordHash = await this.hashingProvider.hashPassword(dto.password);
-      } else {
-        throw new BadRequestException('Password is required for email signup');
-      }
-    }
-
     const user = this.userRepository.create({
-      ...dto,
-      passwordHash,
-      googleId: dto.googleId ?? null,
+      ...input,
+      passwordHash: input.passwordHash,
+      googleId: input.googleId ?? null,
       role: Roles.BUYER,
     });
 

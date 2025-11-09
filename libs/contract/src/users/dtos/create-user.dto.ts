@@ -2,7 +2,6 @@ import { IsEmail, IsOptional, IsString, IsEnum, MinLength, ValidateIf, IsNotEmpt
 import { Transform } from 'class-transformer';
 
 import { Roles } from '../enums/roles.enum';
-import { Gender } from '../enums/gender.enum';
 
 export class CreateUserDto {
   @IsEmail()
@@ -22,9 +21,6 @@ export class CreateUserDto {
   @IsOptional()
   @IsEnum(Roles, { message: 'Role must be BUYER or ADMIN' })
   role?: Roles;
-
-  @IsEnum(Gender, { message: 'Gender must be male, female or other' })
-  gender: Gender;
 
   @IsOptional()
   @IsString()

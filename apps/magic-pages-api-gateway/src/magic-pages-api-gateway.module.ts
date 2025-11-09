@@ -15,17 +15,20 @@ import { AuthModule } from './auth/auth.module';
 import { BooksModule } from './books/books.module';
 import { UploadModule } from './upload/upload.module';
 
-
 @Module({
   imports: [
     /**
      * Global configuration and database connection
      */
-    GlobalConfigModule, DatabaseModule,
+    GlobalConfigModule,
+    DatabaseModule,
     /**
      * Feature modules
      */
-    UsersModule, AuthModule, BooksModule, UploadModule,
+    UsersModule,
+    AuthModule,
+    BooksModule,
+    UploadModule,
   ],
 })
-export class MagicPagesApiGatewayModule { }
+export class MagicPagesApiGatewayModule { } // eslint-disable-line
