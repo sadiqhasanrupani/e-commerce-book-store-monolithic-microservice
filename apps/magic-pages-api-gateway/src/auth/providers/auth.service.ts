@@ -100,20 +100,20 @@ export class AuthService {
   async register(registerDto: RegisterAuthDto): Promise<AuthResult> {
     const { email, password, firstName, lastName, role } = registerDto;
 
-    // 1️⃣ Check for existing user
+    // Check for existing user
     const existingUser = await this.usersService.findByEmail(email);
     if (existingUser) {
       throw new ConflictException(`User with email ${email} already exists`);
     }
 
-    // 2️⃣ Validate and hash password
+    // Validate and hash password
     if (typeof password !== 'string' || password.trim().length < 6) {
       throw new BadRequestException('Password must be at least 6 characters long');
     }
 
     const passwordHash = await this.hashingProvider.hashPassword(password);
 
-    // 3️⃣ Create user record in DB
+    // Create user record in DB
     const newUser = await this.usersService.create({
       email,
       passwordHash,
@@ -122,7 +122,7 @@ export class AuthService {
       role: role ?? Roles.BUYER,
     });
 
-    // 4️⃣ Issue access token
+    // Issue access token
     const payload = {
       sub: newUser.id,
       email: newUser.email,
@@ -132,9 +132,11 @@ export class AuthService {
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: this.jwtConfiguration.secret,
       issuer: this.jwtConfiguration.issuer,
+      audience: this.jwtConfiguration.audience,
+      expiresIn: this.jwtConfiguration.accessTokenTtl,
     });
 
-    // 5️⃣ Return registration response
+    // Return registration response
     return {
       accessToken,
       userId: newUser.id,
@@ -160,6 +162,8 @@ export class AuthService {
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: this.jwtConfiguration.secret,
       issuer: this.jwtConfiguration.issuer,
+      audience: this.jwtConfiguration.audience,
+      expiresIn: this.jwtConfiguration.accessTokenTtl,
     });
 
     return {

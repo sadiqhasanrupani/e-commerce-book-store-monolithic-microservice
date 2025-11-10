@@ -14,6 +14,11 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { BooksModule } from './books/books.module';
 import { UploadModule } from './upload/upload.module';
+import { APP_GUARD } from '@nestjs/core';
+import { AuthenticationGuard } from './auth/guards/authenticate/authenticate.guard';
+import { AccessTokenGuard } from './auth/guards/access-token/access-token.guard';
+import { AuthorizationGuard } from './auth/guards/authorization/authorization.guard';
+import { RoleBaseAccessTokenGuard } from './auth/guards/role-base-access-token/role-base-access-token.guard';
 
 @Module({
   imports: [
@@ -29,6 +34,18 @@ import { UploadModule } from './upload/upload.module';
     AuthModule,
     BooksModule,
     UploadModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: AuthenticationGuard,
+    },
+    AccessTokenGuard,
+    {
+      provide: APP_GUARD,
+      useClass: AuthorizationGuard,
+    },
+    RoleBaseAccessTokenGuard,
   ],
 })
 export class MagicPagesApiGatewayModule { } // eslint-disable-line
