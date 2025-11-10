@@ -2,6 +2,7 @@ import { Controller, Inject } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { STORAGE_PATTERN } from '@app/contract/storage/patterns/storage.pattern';
 import { UploadToStorageProvider } from './providers/upload-to-storage.provider';
+import { DeleteFilesRequest, DeleteFilesResponse, MoveFilesRequest, MoveFilesResponse } from '@app/contract/storage/types/storage.type';
 
 /**
  * Microservice controller for storage operations.
@@ -58,4 +59,16 @@ export class StorageController {
     const fileBuffer = Buffer.concat(chunks);
     return { fileBase64: fileBuffer.toString('base64') };
   }
+
+  @MessagePattern(STORAGE_PATTERN.DELETE)
+  async handleDeleteFiles(@Payload() data: DeleteFilesRequest): Promise<DeleteFilesResponse> {
+    return await this.uploadToStorageProvider.deleteFiles(data)
+  }
+
+  @MessagePattern(STORAGE_PATTERN.MOVE)
+  async handleMoveFiles(@Payload() data: MoveFilesRequest): Promise<MoveFilesResponse> {
+    return await this.uploadToStorageProvider.handleMoveFiles(data)
+  }
+
+
 }

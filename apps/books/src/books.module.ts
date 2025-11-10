@@ -22,7 +22,7 @@ import { STORAGE_CONFIG } from '@app/contract/storage/configs/storage.config';
     GlobalConfigModule,
     DatabaseModule,
     TypeOrmModule.forFeature([Book, Author]),
-    ClientsModule.register([BOOKS_CONFIG.CLIENTS, STORAGE_CONFIG.CLIENTS]),
+    ClientsModule.register([STORAGE_CONFIG.CLIENTS]),
   ],
   controllers: [BooksController],
   providers: [BooksService, CreateBookProvider, UploadBookFilesProvider],

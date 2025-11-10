@@ -65,3 +65,5 @@ postgres-data/
 .obsidianignore
 
 pnpm-lock.yaml
+
+.vscode/*

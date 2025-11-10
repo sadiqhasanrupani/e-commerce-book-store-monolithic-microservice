@@ -29,7 +29,7 @@ export class CreateUserProvider {
       ...input,
       passwordHash: input.passwordHash,
       googleId: input.googleId ?? null,
-      role: Roles.BUYER,
+      role: input.role ?? Roles.BUYER,
     });
 
     await this.userRepository.insert(user);

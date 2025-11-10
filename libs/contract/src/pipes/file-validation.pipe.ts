@@ -1,27 +1,83 @@
-import { BadRequestException, Injectable, PipeTransform } from "@nestjs/common";
+import { BadRequestException, Injectable, PipeTransform } from '@nestjs/common';
 
 interface FileFields {
   [field: string]: string[];
 }
 
+interface FileValidationOptions {
+  allowedMimes: FileFields;
+  requiredFields?: string[];
+}
+
+interface FileValidationErrorResponse {
+  message: string;
+  errors?: Record<string, string[]>;
+}
+
 @Injectable()
 export class FilesValidationPipe implements PipeTransform {
-  constructor(private readonly allowedMimes: FileFields) { }
+  constructor(private readonly options: FileValidationOptions) { }
 
-  transform(files: Record<string, Express.Multer.File[]>) {
+  transform(files: Record<string, Express.Multer.File[]> | undefined) {
+    const { allowedMimes, requiredFields = [] } = this.options;
+
+    // No files uploaded at all
     if (!files || Object.keys(files).length === 0) {
-      throw new BadRequestException('Files are required');
+      const expectedFiles = Object.keys(allowedMimes).map((f) => ({
+        field: f,
+        allowed: allowedMimes[f],
+        required: requiredFields.includes(f),
+      }));
+
+      throw new BadRequestException(<FileValidationErrorResponse>{
+        message: 'No files uploaded. Please attach the required files.',
+        errors: Object.fromEntries(
+          expectedFiles.map(({ field, allowed, required }) => [
+            field,
+            [
+              `${required ? 'Required' : 'Optional'} field. Allowed types: ${allowed.join(', ')}`,
+            ],
+          ]),
+        ),
+      });
     }
 
-    for (const field in files) {
-      const allowed = this.allowedMimes[field] || [];
-      for (const file of files[field]) {
-        if (!allowed.includes(file.mimetype)) {
-          throw new BadRequestException(
-            `Invalid file type for field "${field}": ${file.originalname}`,
-          );
-        }
+    const missingFields: Record<string, string[]> = {};
+    const invalidMimes: Record<string, string[]> = {};
+
+    // Check missing required fields
+    for (const field of requiredFields) {
+      if (!files[field] || files[field].length === 0) {
+        missingFields[field] = ['This file is required'];
       }
+    }
+
+    // Check invalid MIME types
+    for (const field in files) {
+      const allowed = allowedMimes[field] || [];
+      const invalidFiles = files[field].filter(
+        (file) => !allowed.includes(file.mimetype),
+      );
+
+      if (invalidFiles.length > 0) {
+        invalidMimes[field] = invalidFiles.map(
+          (file) =>
+            `Invalid type for "${file.originalname}" (${file.mimetype}). Allowed: ${allowed.join(', ')}`,
+        );
+      }
+    }
+
+    // Build structured error object for frontend
+    if (Object.keys(missingFields).length > 0 || Object.keys(invalidMimes).length > 0) {
+      const errors: Record<string, string[]> = {
+        ...missingFields,
+        ...invalidMimes,
+      };
+
+      throw new BadRequestException(<FileValidationErrorResponse>{
+        message: 'File validation failed',
+        errors,
+      });
     }
 
     return files;

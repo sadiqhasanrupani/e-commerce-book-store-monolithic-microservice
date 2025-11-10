@@ -1,4 +1,6 @@
 export enum STORAGE_PATTERN {
   UPLOAD = 'storage.upload',
-  DOWNLOAD = 'storage_download',
+  DOWNLOAD = 'storage.download',
+  DELETE = 'storage.delete',
+  MOVE = 'storage.move',
 }

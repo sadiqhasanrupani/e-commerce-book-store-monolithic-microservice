@@ -17,6 +17,8 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
+    "types": ["node", "express", "multer"],
+    "typeRoots": ["./src/types", "./node_modules/@types"],
     "paths": {
       "@app/contract/": [
         "libs/contract/src/"
@@ -37,5 +39,6 @@
         "libs/global-config/src/*"
       ]
     }
-  }
+  },
+  "include": ["apps", "libs"]
 }
