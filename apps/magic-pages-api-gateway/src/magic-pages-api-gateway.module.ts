@@ -19,6 +19,7 @@ import { AuthenticationGuard } from './auth/guards/authenticate/authenticate.gua
 import { AccessTokenGuard } from './auth/guards/access-token/access-token.guard';
 import { AuthorizationGuard } from './auth/guards/authorization/authorization.guard';
 import { RoleBaseAccessTokenGuard } from './auth/guards/role-base-access-token/role-base-access-token.guard';
+import { PaginationModule } from './common/pagination/pagination.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { RoleBaseAccessTokenGuard } from './auth/guards/role-base-access-token/r
     AuthModule,
     BooksModule,
     UploadModule,
+    PaginationModule,
   ],
   providers: [
     {

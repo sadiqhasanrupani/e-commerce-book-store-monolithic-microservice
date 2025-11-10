@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, PipeTransform } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, PipeTransform } from '@nestjs/common';
 
 interface FileFields {
   [field: string]: string[];
@@ -16,10 +16,15 @@ interface FileValidationErrorResponse {
 
 @Injectable()
 export class FilesValidationPipe implements PipeTransform {
+  private readonly logger = new Logger(FilesValidationPipe.name);
+
   constructor(private readonly options: FileValidationOptions) { }
 
   transform(files: Record<string, Express.Multer.File[]> | undefined) {
     const { allowedMimes, requiredFields = [] } = this.options;
+
+    this.logger.log("allowedMimes", allowedMimes); 
+    this.logger.log("files", files); 
 
     // No files uploaded at all
     if (!files || Object.keys(files).length === 0) {
