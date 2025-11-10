@@ -13,6 +13,7 @@ import {
   HttpCode,
   ParseIntPipe,
   NotFoundException,
+  Get,
 } from '@nestjs/common';
 
 import { BooksService } from './providers/books.service';
@@ -20,7 +21,7 @@ import { BooksService } from './providers/books.service';
 import { CreateBookDto } from '@app/contract/books/dtos/create-book.dto';
 import { UpdateBookDto } from '@app/contract/books/dtos/update-book.dto';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { ApiBody, ApiConsumes, ApiHeaders, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiHeaders, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 
 import { FilesValidationPipe } from '@app/contract/pipes/file-validation.pipe';
 
@@ -29,6 +30,7 @@ import { RoleTypes } from '@app/contract/auth/enums/role-types.enum';
 import { ParseEntityIdPipe } from '@app/contract/pipes/parse-entity-id.pipe';
 import { DeleteOption } from '@app/contract/books/types/delete-book.type';
 import { Book } from '@app/contract/books/entities/book.entity';
+import { FindAllBookQueryParam, FindAllBookResponse } from '@app/contract/books/types/find-book.type';
 
 @Controller('books')
 export class BooksController {
@@ -39,6 +41,36 @@ export class BooksController {
     private readonly booksService: BooksService,
   ) { } //eslint-disable-line
 
+  @Post()
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Upload book metadata and files',
+    schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', example: 'The Magic of Pages' },
+        description: { type: 'string', example: 'A magical story for kids' },
+        genre: { type: 'string', example: 'fiction' },
+        format: { type: 'string', example: 'pdf' },
+        price: { type: 'number', example: 99.99 },
+        authorName: { type: 'string', example: 'John Doe' },
+        bookCover: {
+          type: 'string',
+          format: 'binary',
+        },
+        snapshots: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+        },
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Book created successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid file or missing fields' })
   @UseInterceptors(
     FileFieldsInterceptor([
       { name: 'bookCover', maxCount: 1 },
@@ -46,16 +78,7 @@ export class BooksController {
       { name: 'file', maxCount: 1 },
     ]),
   )
-  @ApiHeaders([
-    {
-      name: 'Content-Type',
-      description: 'multipart/form-data',
-    },
-  ])
-  @ApiOperation({ summary: 'Book Creation' })
-  @Role(RoleTypes.ADMIN)
-  @Post()
-  create(
+  async create(
     @Body() createBookDto: CreateBookDto,
     @UploadedFiles(
       new FilesValidationPipe({
@@ -68,40 +91,40 @@ export class BooksController {
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           ],
         },
-        requiredFields: ['bookCover', 'file']
+        requiredFields: ['bookCover', 'file'],
       }),
     )
     files?: {
-      bookCover: Express.Multer.File;
+      bookCover?: Express.Multer.File[];
       snapshots?: Express.Multer.File[];
-      file?: Express.Multer.File;
+      file?: Express.Multer.File[];
     },
   ) {
     try {
-      return this.booksService.create({
-        files,
-        createBookDto,
-      });
-    } catch (error: unknown) {
-      let message = 'something went wrong in book service';
+      // Normalize the files object to simpler single-file format
+      const normalizedFiles = {
+        bookCover: files?.bookCover?.[0],
+        snapshots: files?.snapshots || [],
+        file: files?.file?.[0],
+      };
 
-      if (error instanceof Error) {
-        message = error.message;
-      }
+      const result = await this.booksService.create({
+        createBookDto,
+        files: normalizedFiles,
+      });
+
+      return {
+        message: 'Book created successfully',
+        data: result,
+      };
+    } catch (error: unknown) {
+      let message = 'Something went wrong while creating the book';
+      if (error instanceof Error) message = error.message;
 
       throw new HttpException({ message }, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  // @Get()
-  // findAll() {
-  //   return this.booksService.findAll();
-  // }
-  //
-  // @Get(':id')
-  // findOne(@Param('id', ParseIntPipe) id: number) {
-  //   return this.booksService.findOne(id);
-  // }
 
   /**
     * Updates an existing book by its unique identifier.
@@ -128,6 +151,7 @@ export class BooksController {
     * snapshots=<file1.png>, <file2.png>
     * ```
     */
+
   @Put(':id')
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(
@@ -180,6 +204,101 @@ export class BooksController {
       updatedBook: updated
     };
   }
+
+  @Role(RoleTypes.ADMIN)
+  @Get('auth')
+  async findAllAuth(
+    @Query() query: FindAllBookQueryParam,
+  ): Promise<FindAllBookResponse> {
+    return this.booksService.findAll(query);
+  }
+
+  /**
+    * Retrieves all books with support for pagination, filtering, sorting, and visibility control.
+    *
+    * ### Features
+    * - Pagination (`page`, `limit`)
+    * - Sorting (`sortBy`, `sortOrder`)
+    * - Filtering (`genre`, `format`, `availability`, `authorName`, etc.)
+    * - Visibility control (`public`, `private`, `draft`)
+    * - Archival toggle (`includeArchived`)
+    *
+    * ### Example
+    * ```
+    * GET /books?page=2&limit=5&sortBy=title&sortOrder=ASC&genre=fiction
+    * ```
+    */
+  @Get()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Retrieve all books with pagination, filtering, and sorting',
+    description:
+      'Returns a paginated list of books filtered and sorted according to query parameters.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Successfully retrieved paginated list of books.',
+    schema: {
+      example: {
+        meta: {
+          total: 42,
+          totalPages: 5,
+          page: 1,
+          limit: 10,
+          hasNextPage: true,
+          hasPreviousPage: false,
+        },
+        data: [
+          {
+            id: 1,
+            title: 'The Magic Pages: Adventures Begin',
+            authorName: 'John Doe',
+            genre: 'Fantasy',
+            format: 'PDF',
+            price: 199.99,
+            rating: 4.7,
+            visibility: 'public',
+            createdAt: '2025-10-10T12:00:00Z',
+          },
+        ],
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid query parameters or database error.',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1, description: 'Page number (default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10, description: 'Number of items per page (max: 50)' })
+  @ApiQuery({ name: 'sortBy', required: false, enum: ['title', 'price', 'createdAt', 'rating'], example: 'createdAt', description: 'Field to sort by' })
+  @ApiQuery({ name: 'sortOrder', required: false, enum: ['ASC', 'DESC'], example: 'DESC', description: 'Sort direction' })
+  @ApiQuery({ name: 'genre', required: false, type: String, description: 'Filter by book genre' })
+  @ApiQuery({ name: 'format', required: false, type: String, description: 'Filter by book format (e.g., PDF, EPUB)' })
+  @ApiQuery({ name: 'availability', required: false, type: String, description: 'Filter by book availability' })
+  @ApiQuery({ name: 'authorName', required: false, type: String, description: 'Filter by partial author name (case-insensitive)' })
+  @ApiQuery({ name: 'minPrice', required: false, type: Number, description: 'Minimum price filter' })
+  @ApiQuery({ name: 'maxPrice', required: false, type: Number, description: 'Maximum price filter' })
+  @ApiQuery({ name: 'minRating', required: false, type: Number, description: 'Minimum rating filter' })
+  @ApiQuery({ name: 'maxRating', required: false, type: Number, description: 'Maximum rating filter' })
+  @ApiQuery({ name: 'includeArchived', required: false, type: Boolean, example: false, description: 'Include archived books in results' })
+  @ApiQuery({ name: 'visibility', required: false, enum: ['public', 'private', 'draft'], example: 'public', description: 'Book visibility level' })
+
+  async findAll(
+    @Query() query: FindAllBookQueryParam,
+  ): Promise<FindAllBookResponse> {
+    return this.booksService.findAll(query);
+  }
+
+  @Get('/auth/:id')
+  findOneAuth(@Param('id', ParseIntPipe) id: number) {
+    return this.booksService.findOne(id, { includeArchived: true, includePrivate: true });
+  }
+
+  @Get(':id')
+  findOne(@Param('id', ParseIntPipe) id: number) {
+    return this.booksService.findOne(id, {});
+  }
+
 
   @Delete(':id')
   async deleteBook(

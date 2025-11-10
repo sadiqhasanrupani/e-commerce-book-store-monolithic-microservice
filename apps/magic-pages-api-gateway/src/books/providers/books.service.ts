@@ -1,17 +1,19 @@
-import { HttpException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { UpdateBookDto } from '@app/contract/books/dtos/update-book.dto';
 
 import { CreateBookProvider } from './create-book.provider';
 import { UploadBookFilesProvider } from './upload-book-files.provider';
 
 import { CreateBookData } from '@app/contract/books/types/book.type';
-import { DataSource, QueryRunner, Repository } from 'typeorm';
+import { DataSource, QueryRunner, Repository, SelectQueryBuilder } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 
 import { Book } from '@app/contract/books/entities/book.entity';
 import { CreateBookDto } from '@app/contract/books/dtos/create-book.dto';
 import { DeleteBookProvider } from './delete-book.provider';
 import { DeleteOption } from '@app/contract/books/types/delete-book.type';
+import { FindAllBookQueryParam, FindAllBookResponse, FindOneBookOption } from '@app/contract/books/types/find-book.type';
+import { FindBookProvider } from './find-book.provider';
 
 /**
  * Service responsible for handling all book-related operations,
@@ -49,6 +51,12 @@ export class BooksService {
      * Inject dataSource
      * */
     private readonly dataSource: DataSource,
+
+    /**
+     * Inject findBookProvider
+     * */
+    private readonly findBookProvider: FindBookProvider,
+
   ) { } //eslint-disable-line
 
   /**
@@ -390,6 +398,24 @@ export class BooksService {
      * Save and return the updated book entity.
      */
     return await this.bookRepository.save(updatedBook);
+  }
+
+  async findAll(queryParams?: FindAllBookQueryParam): Promise<FindAllBookResponse> {
+    const paginatedBooks = await this.findBookProvider.findAll(queryParams);
+
+    return {
+      message: 'successfully able to find all books',
+      ...paginatedBooks
+    }
+  }
+
+  async findOne(id: number, options: FindOneBookOption) {
+    const book = await this.findBookProvider.findOne(id, options);
+
+    return {
+      message: 'Desired book got successfully',
+      book,
+    }
   }
 
   async deleteBook(
