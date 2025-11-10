@@ -14,7 +14,6 @@ import { DatabaseModule } from '@app/database';
 import { ClientsModule } from '@nestjs/microservices';
 import { Book } from '@app/contract/books/entities/book.entity';
 import { Author } from '@app/contract/books/entities/author.entity';
-import { BOOKS_CONFIG } from '@app/contract/books/config/books.config';
 import { STORAGE_CONFIG } from '@app/contract/storage/configs/storage.config';
 
 @Module({

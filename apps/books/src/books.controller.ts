@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller } from '@nestjs/common';
 import { BooksService } from './providers/books.service';
 import { MessagePattern } from '@nestjs/microservices';
 import { BOOK_PATTERNS } from '@app/contract/books/patterns/books.pattern';
@@ -9,8 +9,8 @@ export class BooksController {
     /**
      * Injecting BooksService to use its methods in the controller
      */
-    private readonly booksService: BooksService
-  ) {}
+    private readonly booksService: BooksService,
+  ) { } //eslint-disable-line
 
   @MessagePattern(BOOK_PATTERNS.CREATE)
   createBook(data: any) {

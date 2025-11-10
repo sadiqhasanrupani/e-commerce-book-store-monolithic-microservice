@@ -6,7 +6,6 @@ import { Repository } from 'typeorm';
 import { Book } from '@app/contract/books/entities/book.entity';
 import { CreateBookDto } from '@app/contract/books/dtos/create-book.dto';
 
-
 @Injectable()
 export class CreateBookProvider {
   constructor(
@@ -14,12 +13,12 @@ export class CreateBookProvider {
      * Inject bookRepository
      * */
     @InjectRepository(Book)
-    private readonly bookRepository: Repository<Book>
+    private readonly bookRepository: Repository<Book>,
   ) { }
 
   public async createBook(createBookDto: CreateBookDto) {
     const bookCreate = this.bookRepository.create(createBookDto);
 
-    return await this.bookRepository.save(bookCreate)
+    return await this.bookRepository.save(bookCreate);
   }
 }
