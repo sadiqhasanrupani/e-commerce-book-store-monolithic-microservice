@@ -17,8 +17,15 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
-    "types": ["node", "express", "multer"],
-    "typeRoots": ["./src/types", "./node_modules/@types"],
+    "types": [
+      "node",
+      "express",
+      "multer"
+    ],
+    "typeRoots": [
+      "./src/types",
+      "./node_modules/@types"
+    ],
     "paths": {
       "@app/contract/": [
         "libs/contract/src/"
@@ -37,8 +44,17 @@
       ],
       "@app/global-config/*": [
         "libs/global-config/src/*"
+      ],
+      "@rmq/rmq": [
+        "libs/rmq/src"
+      ],
+      "@rmq/rmq/*": [
+        "libs/rmq/src/*"
       ]
     }
   },
-  "include": ["apps", "libs"]
+  "include": [
+    "apps",
+    "libs"
+  ]
 }

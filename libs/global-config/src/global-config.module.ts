@@ -8,6 +8,7 @@ import hashConfig from '../configs/hash.config';
 import jwtConfig from '@app/contract/auth/configs/jwt.config';
 
 import environmentSchema from '../schemas/environment.schema';
+import rabbitmqConfig from '../configs/rabbitmq.config';
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
@@ -16,7 +17,7 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: NODE_ENV ? `.env.${NODE_ENV}` : '.env',
-      load: [databaseConfig, minioConfig, jwtConfig, hashConfig],
+      load: [databaseConfig, minioConfig, jwtConfig, hashConfig, rabbitmqConfig],
       validationSchema: environmentSchema,
     }),
     ConfigModule.forFeature(jwtConfig),

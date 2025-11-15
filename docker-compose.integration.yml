@@ -1,0 +1,11 @@
+services:
+  rabbitmq-test:
+    image: rabbitmq:3.11-management
+    container_name: rabbitmq-test
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    environment: 
+      RABBITMQ_DEFAULT_USER: test
+      RABBITMQ_DEFAULT_PASS: test
+      RABBITMQ_DEFAULT_VHOST: /test
