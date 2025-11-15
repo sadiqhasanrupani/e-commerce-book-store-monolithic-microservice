@@ -1,0 +1,58 @@
+stages:
+  - install
+  - lint
+  - test
+  - build
+  - deploy
+
+install:
+  stage: install
+  image: node:22
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+      - .pnpm-store/
+  script:
+    - corepack enable
+    - pnpm install --frozen-lockfile
+  artifacts:
+    paths:
+      - node_modules/
+
+lint:
+  stage: lint
+  image: node:22
+  script:
+    - corepack enable
+    - pnpm install --frozen-lockfile
+    - pnpm lint
+
+test:
+  stage: test
+  image: node:22
+  services:
+    - name: rabbitmq:3.11-management
+      alias: rabbitmq
+  variables:
+    RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/%2F"
+    RABBITMQ_QUEUE: "test-queue"
+  script:
+    - corepack enable
+    - pnpm install --frozen-lockfile
+    - pnpm test
+    - pnpm test:integration
+
+build:
+  stage: build
+  image: docker:28
+  services:
+    - docker:dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+  script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+    - docker build -t $IMAGE_TAG .
+    - docker push $IMAGE_TAG
