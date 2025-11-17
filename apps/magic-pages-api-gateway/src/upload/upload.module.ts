@@ -9,4 +9,4 @@ import { Upload } from '@app/contract/uploads/entities/upload.entity';
   providers: [UploadService, UploadToStorageProvider],
   exports: [UploadService, TypeOrmModule],
 })
-export class UploadModule { }
+export class UploadModule {}

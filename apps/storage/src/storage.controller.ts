@@ -2,7 +2,12 @@ import { Controller, Inject } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { STORAGE_PATTERN } from '@app/contract/storage/patterns/storage.pattern';
 import { UploadToStorageProvider } from './providers/upload-to-storage.provider';
-import { DeleteFilesRequest, DeleteFilesResponse, MoveFilesRequest, MoveFilesResponse } from '@app/contract/storage/types/storage.type';
+import {
+  DeleteFilesRequest,
+  DeleteFilesResponse,
+  MoveFilesRequest,
+  MoveFilesResponse,
+} from '@app/contract/storage/types/storage.type';
 
 /**
  * Microservice controller for storage operations.
@@ -12,10 +17,10 @@ import { DeleteFilesRequest, DeleteFilesResponse, MoveFilesRequest, MoveFilesRes
 export class StorageController {
   constructor(
     /**
-     * Injecting uploadToStorageProvider 
+     * Injecting uploadToStorageProvider
      * */
-    private readonly uploadToStorageProvider: UploadToStorageProvider
-  ) { }
+    private readonly uploadToStorageProvider: UploadToStorageProvider,
+  ) {}
 
   /**
    * Handles uploading a file.
@@ -28,16 +33,12 @@ export class StorageController {
    */
   @MessagePattern(STORAGE_PATTERN.UPLOAD)
   async handleUpload(
-    @Payload() payload: { key: string; fileBuffer: { type: string; data: number[] }; contentType: string }
+    @Payload() payload: { key: string; fileBuffer: { type: string; data: number[] }; contentType: string },
   ) {
     // Reconstruct a true Buffer
     const buffer = Buffer.from(payload.fileBuffer.data);
 
-    const url = await this.uploadToStorageProvider.uploadFileFromBuffer(
-      payload.key,
-      buffer,
-      payload.contentType,
-    );
+    const url = await this.uploadToStorageProvider.uploadFileFromBuffer(payload.key, buffer, payload.contentType);
 
     return { url };
   }
@@ -62,13 +63,11 @@ export class StorageController {
 
   @MessagePattern(STORAGE_PATTERN.DELETE)
   async handleDeleteFiles(@Payload() data: DeleteFilesRequest): Promise<DeleteFilesResponse> {
-    return await this.uploadToStorageProvider.deleteFiles(data)
+    return await this.uploadToStorageProvider.deleteFiles(data);
   }
 
   @MessagePattern(STORAGE_PATTERN.MOVE)
   async handleMoveFiles(@Payload() data: MoveFilesRequest): Promise<MoveFilesResponse> {
-    return await this.uploadToStorageProvider.handleMoveFiles(data)
+    return await this.uploadToStorageProvider.handleMoveFiles(data);
   }
-
-
 }

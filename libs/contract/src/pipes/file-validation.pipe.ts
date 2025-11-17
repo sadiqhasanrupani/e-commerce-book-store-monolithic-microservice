@@ -18,13 +18,13 @@ interface FileValidationErrorResponse {
 export class FilesValidationPipe implements PipeTransform {
   private readonly logger = new Logger(FilesValidationPipe.name);
 
-  constructor(private readonly options: FileValidationOptions) { }
+  constructor(private readonly options: FileValidationOptions) {}
 
   transform(files: Record<string, Express.Multer.File[]> | undefined) {
     const { allowedMimes, requiredFields = [] } = this.options;
 
-    this.logger.log("allowedMimes", allowedMimes); 
-    this.logger.log("files", files); 
+    this.logger.log('allowedMimes', allowedMimes);
+    this.logger.log('files', files);
 
     // No files uploaded at all
     if (!files || Object.keys(files).length === 0) {
@@ -39,9 +39,7 @@ export class FilesValidationPipe implements PipeTransform {
         errors: Object.fromEntries(
           expectedFiles.map(({ field, allowed, required }) => [
             field,
-            [
-              `${required ? 'Required' : 'Optional'} field. Allowed types: ${allowed.join(', ')}`,
-            ],
+            [`${required ? 'Required' : 'Optional'} field. Allowed types: ${allowed.join(', ')}`],
           ]),
         ),
       });
@@ -60,14 +58,11 @@ export class FilesValidationPipe implements PipeTransform {
     // Check invalid MIME types
     for (const field in files) {
       const allowed = allowedMimes[field] || [];
-      const invalidFiles = files[field].filter(
-        (file) => !allowed.includes(file.mimetype),
-      );
+      const invalidFiles = files[field].filter((file) => !allowed.includes(file.mimetype));
 
       if (invalidFiles.length > 0) {
         invalidMimes[field] = invalidFiles.map(
-          (file) =>
-            `Invalid type for "${file.originalname}" (${file.mimetype}). Allowed: ${allowed.join(', ')}`,
+          (file) => `Invalid type for "${file.originalname}" (${file.mimetype}). Allowed: ${allowed.join(', ')}`,
         );
       }
     }

@@ -12,7 +12,7 @@ import { Express } from 'express';
 export class UploadService {
   constructor(
     /**
-     * Inject uploadToStorageProvider 
+     * Inject uploadToStorageProvider
      * */
     private readonly uploadToStorageProvider: UploadToStorageProvider,
 
@@ -26,13 +26,13 @@ export class UploadService {
      * Inject configService
      * */
     private readonly configService: ConfigService,
-  ) { }
+  ) {}
 
-  public async uploadFiles(files: Express.Multer.File[]): Promise<string[]> { 
+  public async uploadFiles(files: Express.Multer.File[]): Promise<string[]> {
     // check files having at-least one image
     if (!files || files.length === 0) {
-      throw new BadRequestException('At least one image or file must be uploaded')
-    }   
+      throw new BadRequestException('At least one image or file must be uploaded');
+    }
 
     // Upload the files to MinIO space object storage
     const urls = await this.uploadToStorageProvider.uploadFiles(files);
@@ -47,7 +47,7 @@ export class UploadService {
         path: urls[i],
         type: files[i].mimetype.split('/')[0], // e.g., 'image' from 'image/jpeg'
         mime: files[i].mimetype,
-        size: files[i].size.toString()
+        size: files[i].size.toString(),
       };
 
       // uploadFiles.push(uploadFile)

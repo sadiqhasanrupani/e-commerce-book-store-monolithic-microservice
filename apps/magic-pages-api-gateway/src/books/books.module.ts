@@ -39,8 +39,8 @@ import { BookMetrics } from '@app/contract/books/entities/book-metrics.entity';
     UploadBookFilesProvider,
     DeleteBookProvider,
     FindBookProvider,
-    BoookMetricsProvider
+    BoookMetricsProvider,
   ],
-  exports: [BooksService, TypeOrmModule]
+  exports: [BooksService, TypeOrmModule],
 })
-export class BooksModule { }
+export class BooksModule {}

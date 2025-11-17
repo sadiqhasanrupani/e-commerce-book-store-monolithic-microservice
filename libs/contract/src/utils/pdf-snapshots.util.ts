@@ -49,14 +49,10 @@ export async function generatePdfSnapshots(
       })
       .slice(0, options.maxPages ?? 5);
 
-    const buffers = await Promise.all(
-      pngFiles.map((f) => fs.readFile(path.join(tmpDir, f))),
-    );
+    const buffers = await Promise.all(pngFiles.map((f) => fs.readFile(path.join(tmpDir, f))));
 
     // cleanup
-    await Promise.all(
-      (await fs.readdir(tmpDir)).map((f) => fs.unlink(path.join(tmpDir, f))),
-    );
+    await Promise.all((await fs.readdir(tmpDir)).map((f) => fs.unlink(path.join(tmpDir, f))));
     await fs.rmdir(tmpDir);
 
     return buffers;

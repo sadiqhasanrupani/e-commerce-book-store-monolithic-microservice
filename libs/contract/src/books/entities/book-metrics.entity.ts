@@ -30,7 +30,7 @@ export class BookMetrics {
   @PrimaryGeneratedColumn('increment', { name: 'metric_id' })
   metricId: number;
 
-  /** 
+  /**
    * Reference to the book this metric belongs to.
    * Ensures metrics are deleted when a book is removed.
    */

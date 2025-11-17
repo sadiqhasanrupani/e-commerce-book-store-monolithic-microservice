@@ -12,24 +12,24 @@ import { DeleteOption } from '@app/contract/books/types/delete-book.type';
 
 @Injectable()
 export class DeleteBookProvider {
-  private readonly logger = new Logger(DeleteBookProvider.name)
+  private readonly logger = new Logger(DeleteBookProvider.name);
 
   constructor(
     private readonly uploadBookFilesProvider: UploadBookFilesProvider,
-    private readonly dataSource: DataSource
+    private readonly dataSource: DataSource,
   ) { } // eslint-disable-line
 
   /**
-     * Extracts the storage object key from a full URL.
-     * For example:
-     *  - http://localhost:9000/the-magic-pages/books/abc.pdf -> the-magic-pages/books/abc.pdf
-     *  - https://cdn.example.com/books/abc.pdf -> books/abc.pdf (if bucket not encoded)
-     *
-     * This function tries to be robust but you should adapt it to your URL patterns.
-     *
-     * @param url - the full URL stored in DB
-     * @returns storage key or null if it cannot be extracted
-     */
+   * Extracts the storage object key from a full URL.
+   * For example:
+   *  - http://localhost:9000/the-magic-pages/books/abc.pdf -> the-magic-pages/books/abc.pdf
+   *  - https://cdn.example.com/books/abc.pdf -> books/abc.pdf (if bucket not encoded)
+   *
+   * This function tries to be robust but you should adapt it to your URL patterns.
+   *
+   * @param url - the full URL stored in DB
+   * @returns storage key or null if it cannot be extracted
+   */
   private extractStorageKeyFromUrl(url?: string | null): string | null {
     if (!url) return null;
     try {
@@ -51,26 +51,29 @@ export class DeleteBookProvider {
   }
 
   /**
-     * Deletes (or archives) a book and associated files.
-     *
-     * Default behavior: archive files to an `archivePrefix` (safe).
-     * If options.force === true, perform a hard delete (remove files from storage and delete DB record).
-     *
-     * Steps:
-     *  - Find book by id
-     *  - Gather storage keys (coverImageUrl, snapshotUrls[], bookFileUrls[])
-     *  - If archiving: call storage provider to move objects to archive prefix
-     *  - If hard deleting: call storage provider to delete objects
-     *  - Start DB transaction:
-     *      - For archive: set isArchived = true, archivedAt = now, optionally set deletedAt if needed
-     *      - For hard delete: remove DB record
-     *  - Commit transaction
-     *
-     * @param id - book id
-     * @param options - Delete option
-     * @returns a result object describing the final state
-     */
-  async deleteBook(id: number, options: DeleteOption = {}): Promise<{ success: boolean; mode: 'archived' | 'deleted'; id: number }> {
+   * Deletes (or archives) a book and associated files.
+   *
+   * Default behavior: archive files to an `archivePrefix` (safe).
+   * If options.force === true, perform a hard delete (remove files from storage and delete DB record).
+   *
+   * Steps:
+   *  - Find book by id
+   *  - Gather storage keys (coverImageUrl, snapshotUrls[], bookFileUrls[])
+   *  - If archiving: call storage provider to move objects to archive prefix
+   *  - If hard deleting: call storage provider to delete objects
+   *  - Start DB transaction:
+   *      - For archive: set isArchived = true, archivedAt = now, optionally set deletedAt if needed
+   *      - For hard delete: remove DB record
+   *  - Commit transaction
+   *
+   * @param id - book id
+   * @param options - Delete option
+   * @returns a result object describing the final state
+   */
+  async deleteBook(
+    id: number,
+    options: DeleteOption = {},
+  ): Promise<{ success: boolean; mode: 'archived' | 'deleted'; id: number }> {
     const { force = false, archivePrefix = 'archive/' } = options;
 
     // find book
@@ -142,12 +145,16 @@ export class DeleteBookProvider {
               );
             }
           } catch (revertErr) {
-            this.logger.error('Failed to revert archive after DB rollback', revertErr as any);
+            this.logger.error('Failed to revert archive after DB rollback', revertErr);
           }
 
-          this.logger.error('Failed to mark book archived', dbErr as any);
+          this.logger.error('Failed to mark book archived', dbErr);
           throw new HttpException(
-            { statusCode: HttpStatus.INTERNAL_SERVER_ERROR, message: 'Failed to archive book', error: (dbErr as Error).message },
+            {
+              statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+              message: 'Failed to archive book',
+              error: (dbErr as Error).message,
+            },
             HttpStatus.INTERNAL_SERVER_ERROR,
           );
         } finally {
@@ -170,10 +177,14 @@ export class DeleteBookProvider {
           return { success: true, mode: 'deleted', id };
         } catch (dbErr) {
           await queryRunner.rollbackTransaction();
-          this.logger.error('Failed to delete book record after storage deletion', dbErr as any);
+          this.logger.error('Failed to delete book record after storage deletion', dbErr);
           // NOTE: at this point, files may already be deleted. Consider raising an alert so ops can recover DB.
           throw new HttpException(
-            { statusCode: HttpStatus.INTERNAL_SERVER_ERROR, message: 'Failed to delete book record', error: (dbErr as Error).message },
+            {
+              statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+              message: 'Failed to delete book record',
+              error: (dbErr as Error).message,
+            },
             HttpStatus.INTERNAL_SERVER_ERROR,
           );
         } finally {
@@ -182,11 +193,15 @@ export class DeleteBookProvider {
       }
     } catch (storageErr) {
       // Storage operation failed — do not change DB
-      this.logger.error('Storage operation failed during delete/archive', storageErr as any);
+      this.logger.error('Storage operation failed during delete/archive', storageErr);
       throw new HttpException(
-        { statusCode: HttpStatus.INTERNAL_SERVER_ERROR, message: 'Storage operation failed', error: (storageErr as Error).message },
+        {
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: 'Storage operation failed',
+          error: (storageErr as Error).message,
+        },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
-} 
+}

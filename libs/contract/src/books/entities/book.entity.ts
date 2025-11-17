@@ -6,12 +6,14 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  OneToOne,
 } from 'typeorm';
 
 import { BookAvailability } from '../enums/book-avaliability.enum';
 import { BookFormat } from '../enums/book-format.enum';
 import { BookGenre } from '../enums/book-genres.enum';
 import { Author } from './author.entity';
+import { BookMetrics } from './book-metrics.entity';
 
 @Entity({ name: 'books' })
 export class Book {
@@ -30,9 +32,9 @@ export class Book {
   @Column({ type: 'enum', enum: BookGenre })
   genre: BookGenre;
 
-  /** Book format (EBOOK, PAPERBACK, HARDCOVER) */
-  @Column({ type: 'enum', enum: BookFormat })
-  format: BookFormat;
+  /** Book format */
+  @Column({ type: 'enum', array: true, enum: BookFormat })
+  formats: BookFormat[];
 
   /** Book availability (AVAILABLE, OUT_OF_STOCK, PREORDER) */
   @Column({ type: 'enum', enum: BookAvailability })
@@ -115,13 +117,12 @@ export class Book {
   author: Author | null;
 
   /**
-     * Archival & Soft Deletion
-     * - `isArchived` allows filtering books that are hidden from users but retained in DB.
-     * - `archivedAt` records when the book was archived.
-     * - `deletedAt` enables soft delete tracking (TypeORM’s `@DeleteDateColumn` is optional).
-     */
-
-  @Column({ type: 'boolean', default: false, name: "is_archived" })
+   * Archival & Soft Deletion
+   * - `isArchived` allows filtering books that are hidden from users but retained in DB.
+   * - `archivedAt` records when the book was archived.
+   * - `deletedAt` enables soft delete tracking (TypeORM’s `@DeleteDateColumn` is optional).
+   */
+  @Column({ type: 'boolean', default: false, name: 'is_archived' })
   isArchived: boolean;
 
   @Column({ type: 'timestamp', nullable: true, name: 'archieve_at' })
@@ -129,4 +130,9 @@ export class Book {
 
   @Column({ type: 'timestamp', nullable: true, name: 'deleted_at' })
   deletedAt?: Date;
+
+
+  /** Metrics relation (1:1) */
+  @OneToOne(() => BookMetrics, (metrics) => metrics.book)
+  metrics: BookMetrics;
 }

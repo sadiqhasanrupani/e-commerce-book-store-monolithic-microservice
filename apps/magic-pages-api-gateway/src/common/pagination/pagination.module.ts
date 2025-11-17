@@ -5,4 +5,4 @@ import { PaginationProvider } from './providers/pagination.provider';
   providers: [PaginationProvider],
   exports: [PaginationProvider],
 })
-export class PaginationModule { }
+export class PaginationModule {}

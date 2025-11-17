@@ -1,12 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import path from 'path';
-import { v4 as uuidv4 } from "uuid"
+import { v4 as uuidv4 } from 'uuid';
 
-import {
-  S3Client,
-  PutObjectCommand,
-} from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 } from 'uuid';
 
 @Injectable()
@@ -19,7 +16,7 @@ export class UploadToStorageProvider {
   constructor(private readonly configService: ConfigService) {
     // Get raw endpoint and ensure it has protocol
     const rawEndpoint = this.configService.get<string>('s3.storageEndpoint') || '';
-    
+
     // Add protocol if missing
     if (rawEndpoint && !rawEndpoint.startsWith('http://') && !rawEndpoint.startsWith('https://')) {
       // Default to http:// for local development
@@ -29,9 +26,9 @@ export class UploadToStorageProvider {
     } else {
       this.endpoint = rawEndpoint;
     }
-    
+
     this.bucketName = this.configService.get<string>('s3.storageBucket') || '';
-    
+
     // Log configuration for debugging
     this.logger.log(`S3/MinIO Configuration:
       Endpoint: ${this.endpoint}
@@ -44,7 +41,7 @@ export class UploadToStorageProvider {
     const accessKeyId = this.configService.get<string>('s3.storageAccessKey') || '';
     const secretAccessKey = this.configService.get<string>('s3.storageSecretKey') || '';
     const region = this.configService.get<string>('s3.storageRegion') || 'us-east-1';
-    
+
     this.s3 = new S3Client({
       region,
       endpoint: this.endpoint, // Works for both MinIO and Spaces
@@ -76,15 +73,17 @@ export class UploadToStorageProvider {
       try {
         // Log request details for debugging
         this.logger.log(`Attempting to upload to bucket '${this.bucketName}' at endpoint '${this.endpoint}'`);
-        this.logger.log(`Upload params: ${JSON.stringify({
-          Bucket: uploadParams.Bucket,
-          Key: uploadParams.Key,
-          ContentType: uploadParams.ContentType,
-          Size: file.buffer.length
-        })}`);
-        
+        this.logger.log(
+          `Upload params: ${JSON.stringify({
+            Bucket: uploadParams.Bucket,
+            Key: uploadParams.Key,
+            ContentType: uploadParams.ContentType,
+            Size: file.buffer.length,
+          })}`,
+        );
+
         const result = await this.s3.send(new PutObjectCommand(uploadParams));
-        
+
         this.logger.log(`Upload result: ${JSON.stringify(result)}`);
 
         // Generate file URL - different format based on environment
@@ -103,18 +102,18 @@ export class UploadToStorageProvider {
         uploadedUrls.push(url);
       } catch (err) {
         this.logger.error(`❌ Upload failed: ${file.originalname}`);
-        
+
         // Add more detailed error logging
         if (err.$metadata) {
           this.logger.error(`Status code: ${err.$metadata.httpStatusCode}`);
           this.logger.error(`Request ID: ${err.$metadata.requestId}`);
         }
-        
+
         if (err.Code) {
           this.logger.error(`Error code: ${err.Code}`);
           this.logger.error(`Error message: ${err.message}`);
         }
-        
+
         throw err;
       }
     }
@@ -125,17 +124,16 @@ export class UploadToStorageProvider {
   async generateFileName(file: Express.Multer.File) {
     // Extract filename
     const name = file.filename.split('.')[0];
-   
+
     // Remove white spaces
     name.replace(/\s/g, '').trim();
-   
+
     // extract the extension
     const extension = path.extname(file.originalname);
     // generate time stamp
     const timestamp = new Date().getTime().toString().trim();
 
     // return file uuid
-    return `${name}-${timestamp}-${uuidv4()}${extension}`
-
+    return `${name}-${timestamp}-${uuidv4()}${extension}`;
   }
 }

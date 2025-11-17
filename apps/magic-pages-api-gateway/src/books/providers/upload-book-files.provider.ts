@@ -9,7 +9,12 @@ import { STORAGE_PATTERN } from '@app/contract/storage/patterns/storage.pattern'
 import { BufferType } from '@app/contract/books/types/upload-book-file.type';
 import { UploadFileRequest, UploadFileResponse } from '@app/contract/books/types/storage.type';
 import { STORAGE_CONFIG } from '@app/contract/storage/configs/storage.config';
-import { DeleteFilesRequest, DeleteFilesResponse, MoveFilesRequest, MoveFilesResponse } from '@app/contract/storage/types/storage.type';
+import {
+  DeleteFilesRequest,
+  DeleteFilesResponse,
+  MoveFilesRequest,
+  MoveFilesResponse,
+} from '@app/contract/storage/types/storage.type';
 
 @Injectable()
 export class UploadBookFilesProvider {
@@ -121,13 +126,13 @@ export class UploadBookFilesProvider {
   }
 
   /**
-     * Permanently deletes multiple files from the object store.
-     * 
-     * - If integrated with the storage microservice, this triggers `STORAGE_PATTERN.DELETE`.
-     * - Fails fast if any deletion fails; logs partial errors.
-     *
-     * @param keys storage object keys (e.g., ['the-magic-pages/books/123.pdf'])
-     */
+   * Permanently deletes multiple files from the object store.
+   *
+   * - If integrated with the storage microservice, this triggers `STORAGE_PATTERN.DELETE`.
+   * - Fails fast if any deletion fails; logs partial errors.
+   *
+   * @param keys storage object keys (e.g., ['the-magic-pages/books/123.pdf'])
+   */
   public async deleteObjects(keys: string[]): Promise<void> {
     if (!keys || keys.length === 0) return;
 
@@ -135,26 +140,18 @@ export class UploadBookFilesProvider {
       const payload: DeleteFilesRequest = { keys };
 
       const response = await firstValueFrom(
-        this.storageClient.send<DeleteFilesResponse, DeleteFilesRequest>(
-          STORAGE_PATTERN.DELETE,
-          payload,
-        ),
+        this.storageClient.send<DeleteFilesResponse, DeleteFilesRequest>(STORAGE_PATTERN.DELETE, payload),
       );
 
       if (response.failed?.length) {
-        this.logger.warn(
-          `⚠️ Some files failed to delete: ${response.failed.join(', ')}`,
-        );
+        this.logger.warn(`⚠️ Some files failed to delete: ${response.failed.join(', ')}`);
       }
 
       this.logger.log(`🗑️ Deleted ${response.deleted?.length ?? keys.length} objects successfully.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error('❌ Failed to delete files from storage', message);
-      throw new HttpException(
-        { message: 'Storage deletion failed', error: message },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException({ message: 'Storage deletion failed', error: message }, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -168,10 +165,7 @@ export class UploadBookFilesProvider {
    * @param keys - original storage keys
    * @param destinationPrefix - e.g. 'archive/'
    */
-  public async moveObjects(
-    keys: string[],
-    destinationPrefix: string,
-  ): Promise<string[]> {
+  public async moveObjects(keys: string[], destinationPrefix: string): Promise<string[]> {
     if (!keys || keys.length === 0) return [];
 
     const results: string[] = [];
@@ -183,10 +177,7 @@ export class UploadBookFilesProvider {
       };
 
       const response = await firstValueFrom(
-        this.storageClient.send<MoveFilesResponse, MoveFilesRequest>(
-          STORAGE_PATTERN.MOVE,
-          payload,
-        ),
+        this.storageClient.send<MoveFilesResponse, MoveFilesRequest>(STORAGE_PATTERN.MOVE, payload),
       );
 
       if (response.moved?.length) {
@@ -202,10 +193,7 @@ export class UploadBookFilesProvider {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error('Failed to move files in storage', message);
-      throw new HttpException(
-        { message: 'Storage move failed', error: message },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException({ message: 'Storage move failed', error: message }, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }

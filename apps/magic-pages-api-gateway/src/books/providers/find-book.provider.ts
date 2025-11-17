@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PaginationProvider } from '../../common/pagination/providers/pagination.provider';
 import { FindAllBookQueryParam, FindOneBookOption } from '@app/contract/books/types/find-book.type';
 import { Repository, SelectQueryBuilder } from 'typeorm';
@@ -78,17 +73,14 @@ export class FindBookProvider {
    *
    * Returns `{ meta, data }` where `meta` contains pagination metadata.
    */
-  async findAll(
-    queryParams?: FindAllBookQueryParam,
-    options?: { isAdmin?: boolean },
-  ) {
+  async findAll(queryParams?: FindAllBookQueryParam, options?: { isAdmin?: boolean }) {
     const {
       page = 1,
       limit = 10,
       sortBy = 'createdAt',
       sortOrder = 'DESC',
       genre,
-      format,
+      formats,
       availability,
       authorName,
       minPrice,
@@ -102,19 +94,22 @@ export class FindBookProvider {
     // runtime authorization: admins can override archive/visibility behavior
     const isAdmin = !!options?.isAdmin;
     const effectiveIncludeArchived = isAdmin ? includeArchived : false;
-    const effectiveIncludePrivate = isAdmin ? (visibility === 'private' || visibility === 'draft' ? true : false) : false;
+    const effectiveIncludePrivate = isAdmin
+      ? visibility === 'private' || visibility === 'draft'
+        ? true
+        : false
+      : false;
 
-    // enforce safe pagination bounds
-    const safeLimit = Math.min(Math.max(limit, 1), 50); // 1..50
+    const safeLimit = Math.min(Math.max(limit, 1), 50);
     const safePage = Math.max(page, 1);
     const skip = (safePage - 1) * safeLimit;
 
-    // Protect against unsafe sortBy injection — whitelist allowed fields
     const allowedSortFields = new Set([
       'createdAt',
       'updatedAt',
       'price',
       'rating',
+      'genre',
       'publishedDate',
       'title',
       'isBestseller',
@@ -125,23 +120,27 @@ export class FindBookProvider {
 
     try {
       // Build query; use projection for list to keep IO low
-      const qb = this.baseQb(effectiveIncludeArchived, effectiveIncludePrivate)
-        .select([
-          'book.id',
-          'book.title',
-          'book.authorName',
-          'book.price',
-          'book.rating',
-          'book.coverImageUrl',
-          'book.isBestseller',
-          'book.isFeatured',
-          'book.visibility',
-          'book.createdAt',
-        ]);
+      const qb = this.baseQb(effectiveIncludeArchived, effectiveIncludePrivate).select([
+        'book.id',
+        'book.title',
+        'book.authorName',
+        'book.price',
+        'book.rating',
+        'book.genre',
+        'book.formats',
+        'book.description',
+        'book.isNewRelease',
+        'book.availability',
+        'book.coverImageUrl',
+        'book.isBestseller',
+        'book.isFeatured',
+        'book.visibility',
+        'book.createdAt',
+      ]);
 
       // Apply filters
       if (genre) qb.andWhere('book.genre = :genre', { genre });
-      if (format) qb.andWhere('book.format = :format', { format });
+      if (formats) qb.andWhere('book.formats = :formats', { formats });
       if (availability) qb.andWhere('book.availability = :availability', { availability });
 
       if (authorName) {
@@ -207,7 +206,9 @@ export class FindBookProvider {
       const book = await qb.getOne();
 
       if (!book) {
-        this.logger.warn(`Book not found or inaccessible. id=${id}, includeArchived=${includeArchived}, includePrivate=${includePrivate}`);
+        this.logger.warn(
+          `Book not found or inaccessible. id=${id}, includeArchived=${includeArchived}, includePrivate=${includePrivate}`,
+        );
         throw new NotFoundException('Book not found or not accessible.');
       }
 
@@ -216,6 +217,64 @@ export class FindBookProvider {
       this.logger.error(`Failed to fetch book id=${id}`, err?.stack ?? err);
       if (err instanceof NotFoundException) throw err;
       throw new BadRequestException('Error while retrieving book.');
+    }
+  }
+
+  /**
+   * findByTitle
+   *
+   * Responsibilities:
+   *  - Perform a highly efficient lookup of a book by its title.
+   *  - Return a minimal projection for uniqueness checks.
+   *  - Normalize incoming title to ensure predictable matching.
+   *
+   * Contract:
+   *  - Returns: Book | null
+   *  - Never throws on "not found".
+   *
+   * Rationale:
+   *  This method is intentionally non-throwing because existence
+   *  checks should be a pure boolean-style operation. The caller,
+   *  not the repository, determines what constitutes an exceptional case.
+   *
+   *  Queries are case-insensitive and whitespace-normalized.
+   */
+  async findByTitle(rawTitle: string): Promise<Book | null> {
+    // Defensive input normalization
+    const title = rawTitle?.trim();
+    if (!title) {
+      this.logger.warn('findByTitle() called with empty or invalid title.');
+      return null;
+    }
+
+    const qb = this.bookRepository
+      .createQueryBuilder('book')
+      .select(['book.id', 'book.title'])
+      .where('LOWER(book.title) = LOWER(:title)', { title })
+      .andWhere('book.deletedAt IS NULL')
+      .limit(1);
+
+    const started = Date.now();
+
+    try {
+      const result = await qb.getOne();
+
+      const duration = Date.now() - started;
+      if (duration > 50) {
+        // Performance observability: slow-path detection
+        this.logger.warn(
+          `findByTitle("${title}") executed slowly: ${duration}ms`,
+        );
+      }
+
+      return result ?? null;
+    } catch (err) {
+      // Hard failure is logged but not thrown.
+      this.logger.error(
+        `Unexpected failure in findByTitle("${title}")`,
+        err?.stack ?? err,
+      );
+      return null;
     }
   }
 }

@@ -24,4 +24,3 @@ export class PaginationQueryDto {
   @IsPositive()
   page?: number;
 }
-

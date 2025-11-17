@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { UpdateBookDto } from '@app/contract/books/dtos/update-book.dto';
 
 import { CreateBookProvider } from './create-book.provider';
@@ -12,7 +12,11 @@ import { Book } from '@app/contract/books/entities/book.entity';
 import { CreateBookDto } from '@app/contract/books/dtos/create-book.dto';
 import { DeleteBookProvider } from './delete-book.provider';
 import { DeleteOption } from '@app/contract/books/types/delete-book.type';
-import { FindAllBookQueryParam, FindAllBookResponse, FindOneBookOption } from '@app/contract/books/types/find-book.type';
+import {
+  FindAllBookQueryParam,
+  FindAllBookResponse,
+  FindOneBookOption,
+} from '@app/contract/books/types/find-book.type';
 import { FindBookProvider } from './find-book.provider';
 
 /**
@@ -56,8 +60,81 @@ export class BooksService {
      * Inject findBookProvider
      * */
     private readonly findBookProvider: FindBookProvider,
-
   ) { } //eslint-disable-line
+
+  private async validateCreateInput(dto: CreateBookDto): Promise<void> {
+    const required = ['title', 'authorName', 'publishedDate', 'price', 'rating'];
+
+    for (const field of required) {
+      if (!dto[field]) {
+        throw new BadRequestException(
+          `Missing required field: "${field}".`
+        );
+      }
+    }
+  }
+
+
+  private async ensureTitleIsUnique(title: string): Promise<void> {
+    const existing = await this.findBookProvider.findByTitle(title);
+
+    if (existing) {
+      throw new ConflictException(
+        `A book with the title "${title}" already exists.`
+      );
+    }
+  }
+
+  private async uploadAssets(files: any): Promise<{
+    bookFileUrls: string[];
+    coverImageUrl: string | null;
+    snapshotUrls: string[];
+  }> {
+    const bookFileUrls: string[] = [];
+    const snapshotUrls: string[] = [];
+    let coverImageUrl: string | null = null;
+
+    // Main book files
+    if (files?.file) {
+      const fileList = Array.isArray(files.file)
+        ? files.file
+        : [files.file];
+      const urls = await this.uploadBookFilesProvider.uploadPdfs(fileList);
+      bookFileUrls.push(...urls);
+    }
+
+    // Cover image
+    if (files?.bookCover) {
+      const file = Array.isArray(files.bookCover)
+        ? files.bookCover[0]
+        : files.bookCover;
+
+      const payload = [
+        {
+          buffer: file.buffer,
+          filename: file.originalname,
+          mimetype: file.mimetype,
+        },
+      ];
+
+      const [url] = await this.uploadBookFilesProvider.uploadBuffers(payload);
+      coverImageUrl = url;
+    }
+
+    // Snapshots
+    if (files?.snapshots?.length) {
+      const payload = files.snapshots.map((file) => ({
+        buffer: file.buffer,
+        filename: file.originalname,
+        mimetype: file.mimetype,
+      }));
+
+      const urls = await this.uploadBookFilesProvider.uploadBuffers(payload);
+      snapshotUrls.push(...urls);
+    }
+
+    return { bookFileUrls, coverImageUrl, snapshotUrls };
+  }
 
   /**
    * Create a new book entry in the database.
@@ -68,101 +145,38 @@ export class BooksService {
    * @returns The created Book entity.
    */
   async create(data: CreateBookData): Promise<Book> {
-    try {
-      const { createBookDto, files } = data;
+    const { createBookDto, files } = data;
 
-      // Prepare URL placeholders
-      let bookFileUrls: string[] = [];
-      let snapshotUrls: string[] = [];
-      let coverImageUrl: string | null = null;
+    // Fail fast if DTO missing required fields.
+    await this.validateCreateInput(createBookDto);
 
-      /**
-       * 1️⃣ Upload the main book file (PDF, Excel, etc.)
-       */
-      if (files?.file) {
-        // The "file" field can be single or array, normalize to array
-        const fileList = Array.isArray(files.file) ? files.file : [files.file];
-        bookFileUrls = await this.uploadBookFilesProvider.uploadPdfs(fileList);
-      }
+    // Check title uniqueness BEFORE performing any I/O
+    await this.ensureTitleIsUnique(createBookDto.title);
 
-      /**
-       * 2️⃣ Upload the cover image (bookCover)
-       */
-      if (files?.bookCover) {
-        const coverFile = Array.isArray(files.bookCover)
-          ? files.bookCover[0]
-          : files.bookCover;
+    // At this point, no expensive operations have been done.
+    // This is deliberate: zero wasted uploads, zero wasted DB calls.
 
-        const coverPayload = [
-          {
-            buffer: coverFile.buffer,
-            filename: coverFile.originalname,
-            mimetype: coverFile.mimetype,
-          },
-        ];
+    // Upload assets (I/O happens only after invariants verified)
+    const { bookFileUrls, coverImageUrl, snapshotUrls } =
+      await this.uploadAssets(files);
 
-        const [uploadedCoverUrl] = await this.uploadBookFilesProvider.uploadBuffers(
-          coverPayload,
-        );
+    // Construct final DTO
+    const finalDto: CreateBookDto = {
+      ...createBookDto,
+      coverImageUrl,
+      bookFileUrls,
+      snapshotUrls,
+      isBestseller: createBookDto.isBestseller ?? false,
+      isFeatured: createBookDto.isFeatured ?? false,
+      isNewRelease: createBookDto.isNewRelease ?? false,
+      allowReviews: createBookDto.allowReviews ?? true,
+      allowWishlist: createBookDto.allowWishlist ?? true,
+      enableNotifications: createBookDto.enableNotifications ?? false,
+      visibility: createBookDto.visibility ?? 'public',
+    };
 
-        coverImageUrl = uploadedCoverUrl;
-      }
-
-      /**
-       * 3️⃣ Upload snapshot images (snapshots)
-       */
-      if (files?.snapshots?.length) {
-        const snapshotPayload = files.snapshots.map((file) => ({
-          buffer: file.buffer,
-          filename: file.originalname,
-          mimetype: file.mimetype,
-        }));
-
-        snapshotUrls = await this.uploadBookFilesProvider.uploadBuffers(
-          snapshotPayload,
-        );
-      }
-
-      /**
-       * 4️⃣ Merge all data into a final CreateBookDto
-       */
-      const completeBookData: CreateBookDto = {
-        ...createBookDto,
-        coverImageUrl,
-        bookFileUrls,
-        snapshotUrls,
-        // Provide default flags if not passed
-        isBestseller: createBookDto.isBestseller ?? false,
-        isFeatured: createBookDto.isFeatured ?? false,
-        isNewRelease: createBookDto.isNewRelease ?? false,
-        allowReviews: createBookDto.allowReviews ?? true,
-        allowWishlist: createBookDto.allowWishlist ?? true,
-        enableNotifications: createBookDto.enableNotifications ?? false,
-        visibility: createBookDto.visibility ?? 'public',
-      };
-
-      /**
-       * 5️⃣ Save the book entry in the database
-       */
-      const createdBook = await this.createBookProvider.createBook(completeBookData);
-
-      return createdBook;
-    } catch (error: unknown) {
-      let message = 'Unknown error during book creation';
-
-      if (error instanceof Error) {
-        message = error.message;
-      }
-
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: 'Failed to create book data',
-          error: message,
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    // Persist book with strong transactional guarantees
+    return this.createBookProvider.createBook(finalDto);
   }
 
   /**
@@ -388,6 +402,7 @@ export class BooksService {
      */
     const updatedBook = this.bookRepository.merge(book, {
       ...updateBookDto,
+      formats: updateBookDto.formats,
       coverImageUrl: updatedCoverUrl,
       snapshotUrls: updatedSnapshotUrls,
       bookFileUrls: updatedBookFileUrls,
@@ -405,8 +420,8 @@ export class BooksService {
 
     return {
       message: 'successfully able to find all books',
-      ...paginatedBooks
-    }
+      ...paginatedBooks,
+    };
   }
 
   async findOne(id: number, options: FindOneBookOption) {
@@ -415,13 +430,10 @@ export class BooksService {
     return {
       message: 'Desired book got successfully',
       book,
-    }
+    };
   }
 
-  async deleteBook(
-    id: number,
-    options: DeleteOption
-  ) {
+  async deleteBook(id: number, options: DeleteOption) {
     const result = await this.deleteBookProvider.deleteBook(id, options);
     return result;
   }

@@ -38,8 +38,10 @@ export class CreateBookDto {
   genre: BookGenre;
 
   /** Format of the book (EBOOK, PAPERBACK, HARDCOVER, etc.). */
-  @IsEnum(BookFormat)
-  format: BookFormat;
+  @IsArray()
+  @IsEnum(BookFormat, { each: true })
+  @Type(() => String)
+  formats: BookFormat[];
 
   /** Availability status (AVAILABLE, OUT_OF_STOCK, PREORDER). */
   @IsEnum(BookAvailability)

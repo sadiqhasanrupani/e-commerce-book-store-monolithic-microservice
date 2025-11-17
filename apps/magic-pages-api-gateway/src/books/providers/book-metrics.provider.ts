@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  BadRequestException,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { BookMetrics } from '@app/contract/books/entities/book-metrics.entity';
@@ -24,7 +19,7 @@ export class BoookMetricsProvider {
   constructor(
     @InjectRepository(BookMetrics)
     private readonly metricsRepository: Repository<BookMetrics>,
-  ) { }
+  ) {}
 
   /**
    * Record an analytic event (view, purchase, wishlist, etc.)
@@ -33,7 +28,11 @@ export class BoookMetricsProvider {
    * - Designed for high write throughput; use queue or batch writes in production.
    * - Later this can publish to Kafka/NATS for async aggregation.
    */
-  async recordEvent(bookId: number, event: 'view' | 'purchase' | 'wishlist' | 'download' | 'rating', value?: number): Promise<void> {
+  async recordEvent(
+    bookId: number,
+    event: 'view' | 'purchase' | 'wishlist' | 'download' | 'rating',
+    value?: number,
+  ): Promise<void> {
     try {
       let metric = await this.metricsRepository.findOne({ where: { bookId } });
       if (!metric) {
@@ -58,9 +57,7 @@ export class BoookMetricsProvider {
         case 'rating':
           if (value && value >= 0 && value <= 5) {
             metric.totalRatings += 1;
-            metric.averageRating =
-              (metric.averageRating * (metric.totalRatings - 1) + value) /
-              metric.totalRatings;
+            metric.averageRating = (metric.averageRating * (metric.totalRatings - 1) + value) / metric.totalRatings;
           }
           break;
         default:
@@ -92,10 +89,7 @@ export class BoookMetricsProvider {
    * Returns books ranked by engagement (views/purchases/downloads)
    * over a configurable time window and filter criteria.
    */
-  async getTopBooksByMetric(
-    metric: keyof BookMetrics,
-    options: MetricsFilterOptions = {},
-  ): Promise<BookMetrics[]> {
+  async getTopBooksByMetric(metric: keyof BookMetrics, options: MetricsFilterOptions = {}): Promise<BookMetrics[]> {
     const { startDate, endDate, genre, authorName, limit = 10 } = options;
 
     try {

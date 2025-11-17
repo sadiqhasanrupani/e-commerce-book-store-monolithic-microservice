@@ -1,8 +1,20 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, PutObjectCommandInput, GetObjectCommand, DeleteObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  PutObjectCommandInput,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  CopyObjectCommand,
+} from '@aws-sdk/client-s3';
 
-import { DeleteFilesRequest, MoveFilesRequest, MoveFilesResponse, UploadType } from "@app/contract/storage/types/storage.type";
+import {
+  DeleteFilesRequest,
+  MoveFilesRequest,
+  MoveFilesResponse,
+  UploadType,
+} from '@app/contract/storage/types/storage.type';
 
 import { generateFileName } from '@app/contract/utils/books.util';
 import { Readable } from 'typeorm/platform/PlatformTools';
@@ -32,17 +44,13 @@ export class UploadToStorageProvider {
     const port = this.configService.get<string>('s3.storagePort') || '9000';
 
     this.endpoint =
-      rawEndpoint.startsWith('http') || rawEndpoint.startsWith('https')
-        ? rawEndpoint
-        : `http://${rawEndpoint}:${port}`;
+      rawEndpoint.startsWith('http') || rawEndpoint.startsWith('https') ? rawEndpoint : `http://${rawEndpoint}:${port}`;
 
     this.bucket = this.configService.get<string>('s3.storageBucket') || '';
     this.region = this.configService.get<string>('s3.storageRegion') || 'us-east-1';
 
-    const accessKeyId =
-      this.configService.get<string>('s3.storageAccessKey') || '';
-    const secretAccessKey =
-      this.configService.get<string>('s3.storageSecretKey') || '';
+    const accessKeyId = this.configService.get<string>('s3.storageAccessKey') || '';
+    const secretAccessKey = this.configService.get<string>('s3.storageSecretKey') || '';
 
     this.s3 = new S3Client({
       region: this.region,
@@ -60,10 +68,7 @@ export class UploadToStorageProvider {
   /**
    * Upload a single file to S3-compatible storage
    */
-  async uploadFile(
-    file: Express.Multer.File,
-    type: UploadType = 'other',
-  ): Promise<string> {
+  async uploadFile(file: Express.Multer.File, type: UploadType = 'other'): Promise<string> {
     if (!file) throw new BadRequestException('File is required');
 
     this.validateFileType(file, type);
@@ -95,10 +100,7 @@ export class UploadToStorageProvider {
   /**
    * Upload multiple files concurrently.
    */
-  async uploadFiles(
-    files: Express.Multer.File[],
-    type: UploadType = 'other',
-  ): Promise<string[]> {
+  async uploadFiles(files: Express.Multer.File[], type: UploadType = 'other'): Promise<string[]> {
     if (!files?.length) throw new BadRequestException('No files provided');
     return Promise.all(files.map((file) => this.uploadFile(file, type)));
   }
@@ -106,11 +108,7 @@ export class UploadToStorageProvider {
   /**
    * Upload file from a raw buffer.
    */
-  async uploadFileFromBuffer(
-    key: string,
-    buffer: Buffer,
-    contentType: string,
-  ): Promise<string> {
+  async uploadFileFromBuffer(key: string, buffer: Buffer, contentType: string): Promise<string> {
     const params: PutObjectCommandInput = {
       Bucket: this.bucket,
       Key: key,
@@ -140,9 +138,7 @@ export class UploadToStorageProvider {
     if (!key) throw new BadRequestException('File key is required');
 
     try {
-      const result = await this.s3.send(
-        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
-      );
+      const result = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
 
       if (!result.Body) throw new BadRequestException('File not found');
       return result.Body as Readable;
@@ -166,20 +162,15 @@ export class UploadToStorageProvider {
    *
    * @param data - Object containing file keys to delete.
    */
-  async deleteFiles(
-    data: DeleteFilesRequest,
-  ): Promise<{ deleted: string[]; failed: string[] }> {
+  async deleteFiles(data: DeleteFilesRequest): Promise<{ deleted: string[]; failed: string[] }> {
     const deleted: string[] = [];
     const failed: string[] = [];
 
-    if (!data?.keys?.length)
-      throw new BadRequestException('No file keys provided for deletion.');
+    if (!data?.keys?.length) throw new BadRequestException('No file keys provided for deletion.');
 
     for (const key of data.keys) {
       try {
-        await this.s3.send(
-          new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
-        );
+        await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
         deleted.push(key);
       } catch (err) {
         failed.push(key);
@@ -187,9 +178,7 @@ export class UploadToStorageProvider {
       }
     }
 
-    this.logger.log(
-      `🗑️ Deleted ${deleted.length} files, ${failed.length} failed.`,
-    );
+    this.logger.log(`🗑️ Deleted ${deleted.length} files, ${failed.length} failed.`);
     return { deleted, failed };
   }
 
@@ -208,8 +197,7 @@ export class UploadToStorageProvider {
    * @returns MoveFilesResponse listing successfully moved and failed files.
    */
   async handleMoveFiles(data: MoveFilesRequest): Promise<MoveFilesResponse> {
-    if (!data?.keys?.length)
-      throw new BadRequestException('No file keys provided for moving.');
+    if (!data?.keys?.length) throw new BadRequestException('No file keys provided for moving.');
 
     const moved: string[] = [];
     const failed: string[] = [];
@@ -228,9 +216,7 @@ export class UploadToStorageProvider {
         );
 
         // Delete only after a successful copy
-        await this.s3.send(
-          new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
-        );
+        await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
 
         moved.push(destinationKey);
         this.logger.log(`📦 Moved ${key} → ${destinationKey}`);
@@ -240,9 +226,7 @@ export class UploadToStorageProvider {
       }
     }
 
-    this.logger.log(
-      `Move operation complete. ${moved.length} moved, ${failed.length} failed.`,
-    );
+    this.logger.log(`Move operation complete. ${moved.length} moved, ${failed.length} failed.`);
     return { moved, failed };
   }
 
@@ -254,17 +238,11 @@ export class UploadToStorageProvider {
     const allowedTypes: Record<UploadType, string[]> = {
       photo: ['image/jpeg', 'image/png', 'image/webp'],
       pdf: ['application/pdf'],
-      xls: [
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      ],
+      xls: ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
       other: [],
     };
 
-    if (
-      allowedTypes[type].length &&
-      !allowedTypes[type].includes(file.mimetype)
-    ) {
+    if (allowedTypes[type].length && !allowedTypes[type].includes(file.mimetype)) {
       throw new BadRequestException(`Invalid file type for ${type}`);
     }
   }
@@ -280,6 +258,4 @@ export class UploadToStorageProvider {
       this.logger.error(`Message: ${err.message}`);
     }
   }
-
-
 }

@@ -3,4 +3,4 @@ export const AUTH_PATTERNS = {
   REGISTER: 'auth.register',
   VALIDATE: 'auth.validate',
   SEND_OTP: 'auth.sendOtp',
-}
+};

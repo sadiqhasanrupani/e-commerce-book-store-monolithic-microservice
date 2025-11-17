@@ -11,7 +11,7 @@ export class Product {
   type: ProductType;
 
   @ManyToOne(() => ProductFormat)
-  format: ProductFormat;
+  formats: ProductFormat;
 
   @Column()
   title: string;

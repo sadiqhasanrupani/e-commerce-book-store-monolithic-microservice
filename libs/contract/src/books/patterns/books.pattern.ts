@@ -12,5 +12,3 @@ export const BOOK_PATTERNS = {
   HOST: '127.0.0.1',
   PORT: 3001,
 } as const;
-
-

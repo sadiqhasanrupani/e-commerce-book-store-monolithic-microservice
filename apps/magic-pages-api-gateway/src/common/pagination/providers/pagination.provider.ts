@@ -27,12 +27,12 @@ export class PaginationProvider {
 
     // Handle QueryBuilder
     if ('getManyAndCount' in source) {
-      const qb = source as SelectQueryBuilder<T>;
+      const qb = source;
       return qb.skip(skip).take(limit).getManyAndCount();
     }
 
     // Handle Repository
-    const repo = source as Repository<T>;
+    const repo = source;
     return repo.findAndCount({
       skip,
       take: limit,
