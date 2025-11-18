@@ -21,18 +21,18 @@ export class RmqModule {
             urls: options.urls,
             queue: options.queue ?? 'magic-pages-queue',
             queueOptions: {
-              durable: true
+              durable: true,
             },
           },
         });
       },
-    }
+    };
 
     return {
       module: RmqModule,
       providers: [clientProvider],
-      exports: [clientProvider]
-    }
+      exports: [clientProvider],
+    };
   }
 
   static registerAsync(): DynamicModule {
@@ -46,18 +46,18 @@ export class RmqModule {
             urls: [configService.getOrThrow<string>('rabbitmq.url')],
             queue: configService.getOrThrow<string>('rabbitmq.queue') ?? 'magic-pages-queue',
             queueOptions: {
-              durable: true
+              durable: true,
             },
           },
         });
       },
-    }
+    };
 
     return {
       module: RmqModule,
       imports: [ConfigModule],
       providers: [clientProvider],
-      exports: [clientProvider]
-    }
+      exports: [clientProvider],
+    };
   }
 }

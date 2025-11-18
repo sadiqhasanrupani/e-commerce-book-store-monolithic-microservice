@@ -324,6 +324,8 @@ export class BooksController {
     return this.booksService.findOne(id, { includeArchived: true, includePrivate: true });
   }
 
+  @Auth(AuthTypes.NONE)
+  @Role(RoleTypes.NONE)
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.booksService.findOne(id, {});

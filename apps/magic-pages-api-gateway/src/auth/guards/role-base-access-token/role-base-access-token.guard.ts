@@ -15,7 +15,7 @@ export class RoleBaseAccessTokenGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
     // Get the user object attached by AuthenticationGuard
-    const user = request.user as JwtPayload;
+    const user = request.user;
 
     if (!user) {
       throw new ForbiddenException('User not authenticated');
