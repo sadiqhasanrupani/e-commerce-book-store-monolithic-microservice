@@ -23,6 +23,7 @@ async function bootstrap() {
   // enabling cors for public usage
   app.enableCors({
     origin: globalThis.process.env.ORIGIN,
+    credentials: true
   });
 
   await app.listen(process.env.PORT ?? 8080);
