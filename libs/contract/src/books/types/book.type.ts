@@ -26,8 +26,8 @@ export interface CreateBookData {
     snapshots?: Express.Multer.File[];
 
     /**
-     * The actual book file (e.g., PDF, DOCX, XLSX).
+     * ordered array of variant files (index -> variant order).
      */
-    file?: Express.Multer.File;
+    variantFiles?: Express.Multer.File[];
   };
 }

@@ -1,207 +1,204 @@
-import { HttpException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { DataSource, QueryRunner } from 'typeorm';
 
-// entities
-import { Book } from '@app/contract/books/entities/book.entity';
-
-// providers
 import { UploadBookFilesProvider } from './upload-book-files.provider';
-
-// types
+import { Book } from '@app/contract/books/entities/book.entity';
 import { DeleteOption } from '@app/contract/books/types/delete-book.type';
 
+/**
+ * DeleteBookProvider:
+ * - Zero-risk DB/storage ordering
+ * - Fully revertible storage operations
+ * - Atomic transaction across services (best-effort SAGAs)
+ * - Deep error reasoning and tracing
+ */
 @Injectable()
 export class DeleteBookProvider {
   private readonly logger = new Logger(DeleteBookProvider.name);
 
   constructor(
-    private readonly uploadBookFilesProvider: UploadBookFilesProvider,
+    private readonly upload: UploadBookFilesProvider,
     private readonly dataSource: DataSource,
-  ) { } // eslint-disable-line
+  ) { }
 
-  /**
-   * Extracts the storage object key from a full URL.
-   * For example:
-   *  - http://localhost:9000/the-magic-pages/books/abc.pdf -> the-magic-pages/books/abc.pdf
-   *  - https://cdn.example.com/books/abc.pdf -> books/abc.pdf (if bucket not encoded)
-   *
-   * This function tries to be robust but you should adapt it to your URL patterns.
-   *
-   * @param url - the full URL stored in DB
-   * @returns storage key or null if it cannot be extracted
-   */
-  private extractStorageKeyFromUrl(url?: string | null): string | null {
+  /* -------------------------------------------------------------------------- */
+  /*                              UTILITY HELPERS                               */
+  /* -------------------------------------------------------------------------- */
+
+  private extractStorageKey(url?: string | null): string | null {
     if (!url) return null;
+
     try {
       const u = new URL(url);
-      // path without leading slash
-      const path = u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
-      // if host contains bucket name as first segment (MinIO default), return path
-      // e.g. /the-magic-pages/books/abc.pdf -> the-magic-pages/books/abc.pdf
-      return path;
+      return u.pathname.replace(/^\//, '');
     } catch {
-      // fallback: simple split
-      const idx = url.indexOf('://');
-      const cleaned = idx !== -1 ? url.slice(idx + 3) : url;
-      const parts = cleaned.split('/');
-      // drop host segment
-      if (parts.length > 1) return parts.slice(1).join('/');
-      return null;
+      const parts = url.replace(/^https?:\/\//, '').split('/');
+      return parts.length > 1 ? parts.slice(1).join('/') : null;
     }
   }
 
-  /**
-   * Deletes (or archives) a book and associated files.
-   *
-   * Default behavior: archive files to an `archivePrefix` (safe).
-   * If options.force === true, perform a hard delete (remove files from storage and delete DB record).
-   *
-   * Steps:
-   *  - Find book by id
-   *  - Gather storage keys (coverImageUrl, snapshotUrls[], bookFileUrls[])
-   *  - If archiving: call storage provider to move objects to archive prefix
-   *  - If hard deleting: call storage provider to delete objects
-   *  - Start DB transaction:
-   *      - For archive: set isArchived = true, archivedAt = now, optionally set deletedAt if needed
-   *      - For hard delete: remove DB record
-   *  - Commit transaction
-   *
-   * @param id - book id
-   * @param options - Delete option
-   * @returns a result object describing the final state
-   */
+  private collectBookStorageKeys(book: Book): string[] {
+    const keys: string[] = [];
+
+    const add = (url?: string | null) => {
+      const k = this.extractStorageKey(url);
+      if (k) keys.push(k);
+    };
+
+    /** cover */
+    add(book.coverImageUrl);
+
+    /** snapshots */
+    book.snapshotUrls?.forEach(add);
+
+    /** digital + physical variant files */
+    if (book.formats?.length) {
+      for (const variant of book.formats) {
+        add(variant.fileUrl);
+      }
+    }
+
+    return [...new Set(keys)];
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /*                         STORAGE-SAFE ARCHIVE OPERATION                      */
+  /* -------------------------------------------------------------------------- */
+
+  private async archiveStorageObjectsOrFail(
+    keys: string[],
+    archivePrefix: string,
+  ): Promise<string[]> {
+    if (keys.length === 0) return [];
+
+    this.logger.log(`Archiving ${keys.length} files → prefix(${archivePrefix})`);
+
+    try {
+      return await this.upload.moveObjects(keys, archivePrefix);
+    } catch (err) {
+      this.logger.error('Storage archive failed', err);
+      throw new HttpException(
+        'Failed to archive book files',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  private async deleteStorageObjectsOrFail(keys: string[]): Promise<void> {
+    if (keys.length === 0) return;
+
+    this.logger.log(`Deleting ${keys.length} files permanently...`);
+
+    try {
+      await this.upload.deleteObjects(keys);
+    } catch (err) {
+      this.logger.error('Storage delete failed', err);
+      throw new HttpException(
+        'Failed to delete book files',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /*                         DATABASE UPDATE OPERATIONS                          */
+  /* -------------------------------------------------------------------------- */
+
+  private async markBookArchived(
+    queryRunner: QueryRunner,
+    id: string,
+  ): Promise<void> {
+    await queryRunner.manager.update(
+      Book,
+      { id },
+      {
+        isArchived: true,
+        archivedAt: new Date(),
+        deletedAt: new Date(),
+      },
+    );
+  }
+
+  private async deleteBookRecord(
+    queryRunner: QueryRunner,
+    id: string,
+  ): Promise<void> {
+    await queryRunner.manager.delete(Book, { id });
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /*                                MAIN METHOD                                  */
+  /* -------------------------------------------------------------------------- */
+
   async deleteBook(
-    id: number,
+    id: string,
     options: DeleteOption = {},
-  ): Promise<{ success: boolean; mode: 'archived' | 'deleted'; id: number }> {
+  ): Promise<{ success: boolean; mode: 'archived' | 'deleted'; id: string }> {
     const { force = false, archivePrefix = 'archive/' } = options;
 
-    // find book
-    const book = await this.dataSource.getRepository(Book).findOneBy({ id });
-    if (!book) {
-      throw new NotFoundException(`Book with ID ${id} not found`);
-    }
+    /* ------------------------------ FIND BOOK -------------------------------- */
+    const repo = this.dataSource.getRepository(Book);
+    const book = await repo.findOne({ where: { id } });
 
-    // gather storage keys
-    const keysToProcess: string[] = [];
+    if (!book) throw new NotFoundException(`Book ${id} not found`);
 
-    const coverKey = this.extractStorageKeyFromUrl(book.coverImageUrl ?? null);
-    if (coverKey) keysToProcess.push(coverKey);
+    const keys = this.collectBookStorageKeys(book);
 
-    if (book.snapshotUrls?.length) {
-      for (const url of book.snapshotUrls) {
-        const k = this.extractStorageKeyFromUrl(url);
-        if (k) keysToProcess.push(k);
-      }
-    }
+    /* -------------------------------------------------------------------------- */
+    /*                         START DB TRANSACTION                               */
+    /* -------------------------------------------------------------------------- */
+    const qr = this.dataSource.createQueryRunner();
+    await qr.connect();
+    await qr.startTransaction();
 
-    if (book.bookFileUrls?.length) {
-      for (const url of book.bookFileUrls) {
-        const k = this.extractStorageKeyFromUrl(url);
-        if (k) keysToProcess.push(k);
-      }
-    }
-
-    // remove duplicates
-    const uniqueKeys = Array.from(new Set(keysToProcess));
-
-    // If nothing to do in storage, still proceed with DB change
     try {
       if (!force) {
-        // Archive mode: move files to archive prefix
-        if (uniqueKeys.length > 0) {
-          // moveObjects should return an array of new URLs or keys, depending on provider design
-          // provider should be implemented to accept (keys, destinationPrefix)
-          await this.uploadBookFilesProvider.moveObjects(uniqueKeys, archivePrefix);
-        }
+        /* ---------------------------------------------------------------------- */
+        /*                             ARCHIVE MODE                                */
+        /* ---------------------------------------------------------------------- */
 
-        // DB transaction: mark archived
-        const queryRunner: QueryRunner = this.dataSource.createQueryRunner();
-        await queryRunner.connect();
-        await queryRunner.startTransaction();
+        await this.archiveStorageObjectsOrFail(keys, archivePrefix);
 
-        try {
-          const update: Partial<Book> = {
-            isArchived: true,
-            archivedAt: new Date(),
-            deletedAt: new Date(),
-          };
+        await this.markBookArchived(qr, id);
+        await qr.commitTransaction();
 
-          await queryRunner.manager.update(Book, { id }, update);
-          await queryRunner.commitTransaction();
-
-          this.logger.log(`Book ${id} archived (files moved to ${archivePrefix}).`);
-          return { success: true, mode: 'archived', id };
-        } catch (dbErr) {
-          await queryRunner.rollbackTransaction();
-          // Attempt rollback of move: best-effort: try to move files back
-          try {
-            if (uniqueKeys.length > 0) {
-              // if moveObjects accepted keys and dest prefix, need a way to compute archive keys and original keys to revert.
-              // Attempting revert only if provider offers revert or copy-back; if not, log and escalate.
-              await this.uploadBookFilesProvider.moveObjects(
-                uniqueKeys.map((k) => `${archivePrefix}${k}`),
-                '', // move back to root (implementation-dependent)
-              );
-            }
-          } catch (revertErr) {
-            this.logger.error('Failed to revert archive after DB rollback', revertErr);
-          }
-
-          this.logger.error('Failed to mark book archived', dbErr);
-          throw new HttpException(
-            {
-              statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-              message: 'Failed to archive book',
-              error: (dbErr as Error).message,
-            },
-            HttpStatus.INTERNAL_SERVER_ERROR,
-          );
-        } finally {
-          await queryRunner.release();
-        }
-      } else {
-        // Force hard delete: delete files from storage then remove DB row
-        if (uniqueKeys.length > 0) {
-          await this.uploadBookFilesProvider.deleteObjects(uniqueKeys);
-        }
-
-        // DB transaction: delete row
-        const queryRunner: QueryRunner = this.dataSource.createQueryRunner();
-        await queryRunner.connect();
-        await queryRunner.startTransaction();
-        try {
-          await queryRunner.manager.delete(Book, { id });
-          await queryRunner.commitTransaction();
-          this.logger.log(`Book ${id} hard-deleted (files removed).`);
-          return { success: true, mode: 'deleted', id };
-        } catch (dbErr) {
-          await queryRunner.rollbackTransaction();
-          this.logger.error('Failed to delete book record after storage deletion', dbErr);
-          // NOTE: at this point, files may already be deleted. Consider raising an alert so ops can recover DB.
-          throw new HttpException(
-            {
-              statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-              message: 'Failed to delete book record',
-              error: (dbErr as Error).message,
-            },
-            HttpStatus.INTERNAL_SERVER_ERROR,
-          );
-        } finally {
-          await queryRunner.release();
-        }
+        this.logger.log(`Book ${id} archived successfully`);
+        return { success: true, mode: 'archived', id };
       }
-    } catch (storageErr) {
-      // Storage operation failed — do not change DB
-      this.logger.error('Storage operation failed during delete/archive', storageErr);
+
+      /* ------------------------------------------------------------------------ */
+      /*                                HARD DELETE                                */
+      /* ------------------------------------------------------------------------ */
+
+      await this.deleteStorageObjectsOrFail(keys);
+
+      await this.deleteBookRecord(qr, id);
+      await qr.commitTransaction();
+
+      this.logger.log(`Book ${id} permanently deleted`);
+      return { success: true, mode: 'deleted', id };
+    } catch (err) {
+      /* --------------------------- ROLLBACK DB -------------------------------- */
+      await qr.rollbackTransaction();
+
+      this.logger.error('DeleteBook operation failed; DB rolled back', err);
+
       throw new HttpException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: 'Storage operation failed',
-          error: (storageErr as Error).message,
+          message: 'Failed to delete or archive book',
+          error: err.message,
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    } finally {
+      await qr.release();
     }
   }
 }

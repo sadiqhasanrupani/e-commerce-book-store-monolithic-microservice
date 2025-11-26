@@ -239,7 +239,7 @@ export class FindBookProvider {
    *
    *  Queries are case-insensitive and whitespace-normalized.
    */
-  async findByTitle(rawTitle: string): Promise<Book | null> {
+  public async findByTitle(rawTitle: string): Promise<Book | null> {
     // Defensive input normalization
     const title = rawTitle?.trim();
     if (!title) {
@@ -275,6 +275,76 @@ export class FindBookProvider {
         err?.stack ?? err,
       );
       return null;
+    }
+  }
+
+  /**
+   * findByTitles
+   *
+   * Responsibilities:
+   *  - Efficiently lookup multiple books by their titles in a single query.
+   *  - Return a minimal projection suitable for uniqueness validation or mapping.
+   *  - Normalize all incoming titles to ensure predictable matching.
+   *
+   * Contract:
+   *  - Returns: Book[]
+   *  - Never throws on "not found" or invalid inputs.
+   *
+   * Rationale:
+   *  This is a bulk version of findByTitle(), optimized to avoid N+1 lookups.
+   *  The method aims for correctness, protective normalization, and reliably
+   *  non-throwing behavior while maintaining a clean interface.
+   *
+   *  Matching is case-insensitive and whitespace-normalized.
+   */
+  public async findByTitles(rawTitles: string[]): Promise<Book[]> {
+    if (!Array.isArray(rawTitles) || rawTitles.length === 0) {
+      this.logger.warn('findByTitles() called with empty or invalid title list.');
+      return [];
+    }
+
+    // Normalize: trim, lowercase for consistent comparison
+    const normalizedTitles = rawTitles
+      .map(t => t?.trim())
+      .filter(Boolean) as string[];
+
+    if (normalizedTitles.length === 0) {
+      this.logger.warn(
+        'findByTitles() received titles, but all were empty or invalid after normalization.',
+      );
+      return [];
+    }
+
+    const started = Date.now();
+
+    try {
+      // Use LOWER() for case-insensitive match.
+      const qb = this.bookRepository
+        .createQueryBuilder('book')
+        .select(['book.id', 'book.title'])
+        .where('LOWER(book.title) IN (:...titles)', {
+          titles: normalizedTitles.map(t => t.toLowerCase()),
+        })
+        .andWhere('book.deletedAt IS NULL');
+
+      const results = await qb.getMany();
+
+      const duration = Date.now() - started;
+      if (duration > 80) {
+        // Slow-path detection for bulk queries
+        this.logger.warn(
+          `findByTitles() executed slowly: ${duration}ms for ${normalizedTitles.length} titles.`,
+        );
+      }
+
+      return results;
+    } catch (err) {
+      // Log the failure but follow the non-throwing contract
+      this.logger.error(
+        `Unexpected failure in findByTitles()`,
+        err?.stack ?? err,
+      );
+      return [];
     }
   }
 }
