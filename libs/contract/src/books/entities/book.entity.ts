@@ -1,138 +1,109 @@
 import {
-  Entity,
-  Column,
-  PrimaryGeneratedColumn,
-  CreateDateColumn,
-  UpdateDateColumn,
-  ManyToOne,
-  JoinColumn,
-  OneToOne,
-} from 'typeorm';
+  Entity, PrimaryGeneratedColumn, Column, ManyToOne,
+  CreateDateColumn, UpdateDateColumn, OneToMany,
+  ManyToMany, JoinTable, Index
+} from "typeorm";
 
-import { BookAvailability } from '../enums/book-avaliability.enum';
-import { BookFormat } from '../enums/book-format.enum';
-import { BookGenre } from '../enums/book-genres.enum';
-import { Author } from './author.entity';
-import { BookMetrics } from './book-metrics.entity';
+import { Author } from "@app/contract/author/entities/author.entity";
+import { Tag } from "./tags.entity";
+import { BookFormatVariant } from "./book-format-varient.entity";
+import { Category } from "./categories.entity";
+import { BookMetric } from "./book-metrics.entity";
 
-@Entity({ name: 'books' })
+@Entity("books")
+@Index("idx_books_title", ["title"], { unique: true })
+@Index("idx_books_slug", ["slug"])
+@Index("idx_books_age_group", ["ageGroup"])
 export class Book {
-  @PrimaryGeneratedColumn()
-  id: number;
+  @PrimaryGeneratedColumn("uuid")
+  id: string;
 
-  /** Title of the book */
-  @Column({ type: 'varchar', length: 255, unique: true })
+  @Column({ length: 255 })
   title: string;
 
-  /** Description of the book */
-  @Column({ type: 'text' })
-  description: string;
+  @Column({ length: 255, nullable: true })
+  subtitle?: string;
 
-  /** Genre (Fiction, Non-fiction, etc.) */
-  @Column({ type: 'enum', enum: BookGenre })
-  genre: BookGenre;
+  @Column({ type: "text", nullable: true })
+  description?: string;
 
-  /** Book format */
-  @Column({ type: 'enum', array: true, enum: BookFormat })
-  formats: BookFormat[];
+  @Column({ length: 80, nullable: true })
+  genre?: string;
 
-  /** Book availability (AVAILABLE, OUT_OF_STOCK, PREORDER) */
-  @Column({ type: 'enum', enum: BookAvailability })
-  availability: BookAvailability;
+  @ManyToOne(() => Author, author => author.books, { nullable: true, onDelete: "SET NULL" })
+  author?: Author;
 
-  /** Foreign key to the author */
-  @Column({ type: 'int', name: 'author_id', nullable: true })
-  authorId: number | null;
+  @Column({ type: "uuid", nullable: true })
+  authorId?: string;
 
-  /** Display name of the author */
-  @Column({ type: 'varchar', length: 100 })
-  authorName: string;
+  @Column({ length: 100, nullable: true })
+  authorName?: string;
 
-  /** Published date */
-  @Column({ type: 'date' })
-  publishedDate: Date;
+  @Column({ length: 255, nullable: true })
+  coverImageUrl?: string;
 
-  /** Price of the book (max 2 decimal places) */
-  @Column({ type: 'decimal', precision: 10, scale: 2 })
-  price: number;
+  @Column({ type: "text", array: true, nullable: true })
+  snapshotUrls?: string[];
 
-  /** Rating of the book (max 1 decimal place, 0–5) */
-  @Column({ type: 'decimal', precision: 2, scale: 1 })
-  rating: number;
+  @Column({ length: 200, nullable: true })
+  slug?: string;
 
-  /** Cover image URL (stored in CDN or object storage) */
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  coverImageUrl: string | null;
+  @Column({ length: 160, nullable: true })
+  metaTitle?: string;
 
-  /** Snapshot image URLs (array) */
-  @Column('text', { array: true, nullable: true })
-  snapshotUrls: string[] | null;
+  @Column({ length: 500, nullable: true })
+  metaDescription?: string;
 
-  /** File URLs (PDF, EPUB, DOCX, etc.) */
-  @Column('text', { array: true, nullable: true })
-  bookFileUrls: string[] | null;
-
-  /** Bestseller flag */
-  @Column({ type: 'boolean', default: false })
+  @Column({ default: false })
   isBestseller: boolean;
 
-  /** Featured flag */
-  @Column({ type: 'boolean', default: false })
+  @Column({ default: false })
   isFeatured: boolean;
 
-  /** New release flag */
-  @Column({ type: 'boolean', default: false })
+  @Column({ default: false })
   isNewRelease: boolean;
 
-  /** Whether users can add reviews */
-  @Column({ type: 'boolean', default: true })
+  @Column({ default: true })
   allowReviews: boolean;
 
-  /** Whether users can add to wishlist */
-  @Column({ type: 'boolean', default: true })
+  @Column({ default: true })
   allowWishlist: boolean;
 
-  /** Whether users receive notifications about this book */
-  @Column({ type: 'boolean', default: false })
-  enableNotifications: boolean;
+  @Column({ length: 10, default: "public" })
+  visibility: string;
 
-  /** Visibility setting */
-  @Column({
-    type: 'enum',
-    enum: ['public', 'private', 'draft'],
-    default: 'public',
-  })
-  visibility: 'public' | 'private' | 'draft';
+  @Column({ length: 24, nullable: true })
+  ageGroup?: string;
 
-  /** Timestamps */
-  @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ type: 'timestamp', name: 'updated_at' })
-  updatedAt: Date;
-
-  /** Many books belong to one author */
-  @ManyToOne(() => Author, (author) => author.books, { onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'author_id' })
-  author: Author | null;
-
-  /**
-   * Archival & Soft Deletion
-   * - `isArchived` allows filtering books that are hidden from users but retained in DB.
-   * - `archivedAt` records when the book was archived.
-   * - `deletedAt` enables soft delete tracking (TypeORM’s `@DeleteDateColumn` is optional).
-   */
-  @Column({ type: 'boolean', default: false, name: 'is_archived' })
+  @Column({ default: false })
   isArchived: boolean;
 
-  @Column({ type: 'timestamp', nullable: true, name: 'archieve_at' })
+  @Column({ type: "timestamptz", nullable: true })
   archivedAt?: Date;
 
-  @Column({ type: 'timestamp', nullable: true, name: 'deleted_at' })
+  @Column({ type: "timestamptz", nullable: true })
   deletedAt?: Date;
 
+  @Column({ type: "tsvector", nullable: true })
+  tsv?: string;
 
-  /** Metrics relation (1:1) */
-  @OneToOne(() => BookMetrics, (metrics) => metrics.book)
-  metrics: BookMetrics;
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+
+  @OneToMany(() => BookFormatVariant, variant => variant.book)
+  formats: BookFormatVariant[];
+
+  @ManyToMany(() => Category)
+  @JoinTable({ name: "book_categories" })
+  categories: Category[];
+
+  @ManyToMany(() => Tag)
+  @JoinTable({ name: "book_tags" })
+  tags: Tag[];
+
+  @OneToMany(() => BookMetric, metric => metric.book)
+  metrics: BookMetric[];
 }

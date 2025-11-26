@@ -18,6 +18,15 @@ import {
   FindOneBookOption,
 } from '@app/contract/books/types/find-book.type';
 import { FindBookProvider } from './find-book.provider';
+import { BufferType } from '@app/contract/books/types/upload-book-file.type';
+import { BookFormatVariant } from '@app/contract/books/entities/book-format-varient.entity';
+
+type UploadAssetsResult = {
+  uploadedKeys: string[];
+  coverImageUrl: string | undefined;
+  snapshotUrls: string[];
+  variantFileUrls: Array<string | undefined>
+}
 
 /**
  * Service responsible for handling all book-related operations,
@@ -30,11 +39,6 @@ export class BooksService {
    * Injecting the Book repository to interact with the database.
    */
   constructor(
-    /**
-     * Injecting createBookProvider
-     * */
-    private readonly createBookProvider: CreateBookProvider,
-
     /**
      * Injecting uploadBookFilesProvider
      * */
@@ -60,7 +64,98 @@ export class BooksService {
      * Inject findBookProvider
      * */
     private readonly findBookProvider: FindBookProvider,
+
+    /** Inject createBookProvider */
+    private readonly createBookProvider: CreateBookProvider
   ) { } //eslint-disable-line
+
+
+  /**
+   * Extracts the object storage key (path inside the bucket) from a full URL.
+   *
+   * Handles:
+   *  - MinIO  (http://localhost:9000/bucket/path/file.pdf)
+   *  - S3     (https://bucket.s3.amazonaws.com/path/file.pdf)
+   *  - Spaces (https://bucket.region.digitaloceanspaces.com/path/file.pdf)
+   *  - CDN URLs (https://cdn.example.com/path/file.pdf)
+   *  - Signed URLs (?X-Amz-Signature=...)
+   *
+   * Output ALWAYS looks like:
+   *    "bucket/path/file.pdf"
+   * or if bucket isn't part of the URL:
+   *    "path/file.pdf"
+   *
+   * @param url - raw URL stored in DB
+   * @returns string | null - sanitized storage key
+   */
+  protected extractStorageKeyFromUrl(url?: string | null): string | null {
+    if (!url || typeof url !== 'string') return null;
+
+    try {
+      // Strip query params (signed URLs, CDN tokens, etc.)
+      const cleanUrl = url.split('?')[0];
+
+      const u = new URL(cleanUrl);
+
+      // Normalize path
+      let key = u.pathname.replace(/^\/+/, ''); // remove leading "/"
+      key = key.replace(/\/+$/, '');            // remove trailing "/"
+
+      if (!key) return null;
+
+      /**
+       * Case 1: Standard S3 virtual-host style:
+       *   https://bucket.s3.amazonaws.com/path/file.pdf
+       * Host looks like: "<bucket>.s3.amazonaws.com"
+       *
+       * We must ensure we do not accidentally prepend bucket twice.
+       */
+      const hostParts = u.hostname.split('.');
+      const bucketCandidate = hostParts[0] ?? null;
+
+      const isAwsStyle =
+        u.hostname.includes('amazonaws.com') ||
+        u.hostname.includes('digitaloceanspaces.com') ||
+        u.hostname.includes('s3.') ||
+        u.hostname.includes('r2.cloudflarestorage.com');
+
+      if (isAwsStyle) {
+        // If bucket is already included in key, return as-is.
+        if (bucketCandidate && key.startsWith(bucketCandidate + '/')) {
+          return key;
+        }
+
+        // Otherwise, prepend it:
+        if (bucketCandidate) {
+          return `${bucketCandidate}/${key}`;
+        }
+      }
+
+      /**
+       * Case 2: MinIO with path-style bucket URLs:
+       *   http://localhost:9000/the-magic-pages/books/file.pdf
+       * Path looks like: "/the-magic-pages/books/file.pdf"
+       *
+       * The path already contains the bucket, so we return it as-is.
+       */
+      return key;
+    } catch (err) {
+      /**
+       * Fallback logic if URL parsing fails:
+       *  - Strip protocol if present
+       *  - Drop hostname
+       *  - Return remaining path
+       */
+      try {
+        const noProto = url.replace(/^https?:\/\//, '');
+        const parts = noProto.split('/');
+        if (parts.length <= 1) return null;
+        return parts.slice(1).join('/');
+      } catch {
+        return null;
+      }
+    }
+  }
 
   private async validateCreateInput(dto: CreateBookDto): Promise<void> {
     const required = ['title', 'authorName', 'publishedDate', 'price', 'rating'];
@@ -74,7 +169,6 @@ export class BooksService {
     }
   }
 
-
   private async ensureTitleIsUnique(title: string): Promise<void> {
     const existing = await this.findBookProvider.findByTitle(title);
 
@@ -85,98 +179,228 @@ export class BooksService {
     }
   }
 
-  private async uploadAssets(files: any): Promise<{
-    bookFileUrls: string[];
-    coverImageUrl: string | null;
-    snapshotUrls: string[];
-  }> {
-    const bookFileUrls: string[] = [];
-    const snapshotUrls: string[] = [];
-    let coverImageUrl: string | null = null;
+  private async uploadAssets(files: any, createBookDto: CreateBookDto): Promise<UploadAssetsResult> {
+    const uploadedKeys: string[] = []; // for cleanup in case of failure.
+    let coverImageUrl: string | undefined;
+    let snapshotUrls: string[] = [];
+    const variantFileUrls: Array<string | undefined> = new Array(createBookDto.variants.length).fill(undefined);
 
-    // Main book files
-    if (files?.file) {
-      const fileList = Array.isArray(files.file)
-        ? files.file
-        : [files.file];
-      const urls = await this.uploadBookFilesProvider.uploadPdfs(fileList);
-      bookFileUrls.push(...urls);
-    }
+    try {
+      /** 2.a upload coverImage */
+      if (files?.bookCover) {
+        const payload: BufferType[] = [{
+          buffer: files.bookCover.buffer,
+          filename: files.bookCover.filename,
+          mimetype: files.bookCover.mimetype
+        }];
+        const [url] = await this.uploadBookFilesProvider.uploadBuffers(payload);
+        coverImageUrl = url;
+        const k = this.extractStorageKeyFromUrl(url)
+        if (k) uploadedKeys.push(k);
+      }
 
-    // Cover image
-    if (files?.bookCover) {
-      const file = Array.isArray(files.bookCover)
-        ? files.bookCover[0]
-        : files.bookCover;
-
-      const payload = [
-        {
+      /** 2.b upload snapshots (if any) */
+      if (files?.snapshots) {
+        const payload: BufferType[] = files.snapshots.map(file => ({
           buffer: file.buffer,
-          filename: file.originalname,
+          filename: file.filename,
           mimetype: file.mimetype,
-        },
-      ];
+        }));
 
-      const [url] = await this.uploadBookFilesProvider.uploadBuffers(payload);
-      coverImageUrl = url;
+        const urls = await this.uploadBookFilesProvider.uploadBuffers(payload);
+        snapshotUrls = urls;
+
+        // get the keys and push it to uploadedKeys
+        for (const u of urls) {
+          const k = this.extractStorageKeyFromUrl(u);
+          if (k) uploadedKeys.push(k)
+        }
+      }
+
+      /** 2.c upload variant files in order (if provided) 
+       * Mapping rule: variantFiles[i] -> createBookDto.variants[i]
+       * */
+      if (files?.variantFiles?.length) {
+        // prefer provider.uploadPdfs for document uploads if available (batch)
+        // fall back to uploadBuffers if provider doesn't have uploadPdfs
+        const variantFiles = files.variantFiles;
+        // try batch using uploadPdfs (assumes provider returns urls in same order)
+        if (typeof this.uploadBookFilesProvider.uploadPdfs === 'function') {
+          const urls = await this.uploadBookFilesProvider.uploadPdfs(variantFiles);
+          for (let i = 0; i < Math.min(urls.length, variantFileUrls.length); i++) {
+            variantFileUrls[i] = urls[i];
+            const k = this.extractStorageKeyFromUrl(urls[i]);
+            if (k) uploadedKeys.push(k);
+          }
+        } else {
+          // fallback: upload individually by buffer
+          for (let i = 0; i < Math.min(variantFiles.length, variantFileUrls.length); i++) {
+            const f = variantFiles[i];
+            const [url] = await this.uploadBookFilesProvider.uploadBuffers([{
+              buffer: f.buffer,
+              filename: f.originalname,
+              mimetype: f.mimetype,
+            }]);
+            variantFileUrls[i] = url;
+            const k = this.extractStorageKeyFromUrl(url);
+            if (k) uploadedKeys.push(k);
+          }
+        }
+      }
+
+      // NOTE: Any variant that doesn't receive a variantFileUrl remains undefined — may be allowed (e.g. physical format)
+    } catch (uploadErr) {
+      // Upload failed — nothing persisted; attempt cleanup for partially uploaded keys (best-effort)
+      this.logger.error('Asset upload failed while creating book', uploadErr);
+      if (uploadedKeys.length > 0 && typeof this.uploadBookFilesProvider.deleteObjects === 'function') {
+        try {
+          await this.uploadBookFilesProvider.deleteObjects(uploadedKeys);
+        } catch (cleanupErr) {
+          this.logger.error('Failed to cleanup uploaded assets after upload error', cleanupErr);
+        }
+      }
+      throw new HttpException({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'Failed to upload assets',
+        error: (uploadErr as Error).message ?? String(uploadErr),
+      }, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
-    // Snapshots
-    if (files?.snapshots?.length) {
-      const payload = files.snapshots.map((file) => ({
-        buffer: file.buffer,
-        filename: file.originalname,
-        mimetype: file.mimetype,
-      }));
-
-      const urls = await this.uploadBookFilesProvider.uploadBuffers(payload);
-      snapshotUrls.push(...urls);
-    }
-
-    return { bookFileUrls, coverImageUrl, snapshotUrls };
+    return { uploadedKeys, variantFileUrls, coverImageUrl, snapshotUrls, };
   }
 
   /**
    * Create a new book entry in the database.
    * Uploads the book image via Storage microservice if provided.
    *
-   * @param data - Partial data for the new book. Can include any subset of the Book entity fields.
-   * @param file - Optional file object containing buffer, filename, mimetype
-   * @returns The created Book entity.
+   * @param data - Data contains validated CreateBookDto (variants: CreateBookVariantDto[]) 
+   * and optional file containers.
+   *  {
+   *    data: CreateBookDto,
+   *    files: {
+   *      bookCover?: Express.Multer.File,
+   *      snapshots?: Express.Multer.File[],
+   *      variantFiles?: Express.Multer.File[]
+   *    }
+   *  }
    */
   async create(data: CreateBookData): Promise<Book> {
     const { createBookDto, files } = data;
 
-    // Fail fast if DTO missing required fields.
-    await this.validateCreateInput(createBookDto);
+    // 0. quick guards
+    if (!createBookDto) {
+      throw new BadRequestException('createBookDto is required');
+    }
 
-    // Check title uniqueness BEFORE performing any I/O
+    if (!Array.isArray(createBookDto.variants) || createBookDto.variants.length === 0) {
+      throw new BadRequestException('At least one variant is required');
+    }
+
+    /** 1. fail-fast domain invairant check (no heavy I/O) */
     await this.ensureTitleIsUnique(createBookDto.title);
 
-    // At this point, no expensive operations have been done.
-    // This is deliberate: zero wasted uploads, zero wasted DB calls.
+    /** 2. upload assests (only after invariants passed) 
+     * We gather uploaded URLs to attach to DTO before DB transaction
+     * */
+    const { coverImageUrl, snapshotUrls, uploadedKeys, variantFileUrls } =
+      await this.uploadAssets(files, createBookDto);
 
-    // Upload assets (I/O happens only after invariants verified)
-    const { bookFileUrls, coverImageUrl, snapshotUrls } =
-      await this.uploadAssets(files);
+    // --- 3. persist Book + Variants inside a single transaction
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    // Construct final DTO
-    const finalDto: CreateBookDto = {
-      ...createBookDto,
-      coverImageUrl,
-      bookFileUrls,
-      snapshotUrls,
-      isBestseller: createBookDto.isBestseller ?? false,
-      isFeatured: createBookDto.isFeatured ?? false,
-      isNewRelease: createBookDto.isNewRelease ?? false,
-      allowReviews: createBookDto.allowReviews ?? true,
-      allowWishlist: createBookDto.allowWishlist ?? true,
-      enableNotifications: createBookDto.enableNotifications ?? false,
-      visibility: createBookDto.visibility ?? 'public',
-    };
+    try {
+      // 3.a prepare Book entity payload (normalize DTO -> entity fields)
+      const bookPayload: Partial<Book> = {
+        title: createBookDto.title,
+        subtitle: createBookDto.subtitle,
+        description: createBookDto.description,
+        genre: createBookDto.genre,
+        authorId: createBookDto.authorId ?? undefined,
+        authorName: createBookDto.authorName ?? (createBookDto.author?.name ?? undefined),
+        coverImageUrl: coverImageUrl ?? createBookDto.coverImageUrl ?? undefined,
+        snapshotUrls: snapshotUrls.length ? snapshotUrls : createBookDto.snapshotUrls,
+        slug: createBookDto.slug,
+        metaTitle: createBookDto.metaTitle,
+        metaDescription: createBookDto.metaDescription,
+        isBestseller: createBookDto.isBestseller ?? false,
+        isFeatured: createBookDto.isFeatured ?? false,
+        isNewRelease: createBookDto.isNewRelease ?? false,
+        allowReviews: createBookDto.allowReviews ?? true,
+        allowWishlist: createBookDto.allowWishlist ?? true,
+        visibility: createBookDto.visibility ?? 'public',
+        // leave isArchived/archivedAt/deletedAt to defaults
+      };
 
+      // create Book row
+      const bookRepo = queryRunner.manager.getRepository(Book);
+      const bookEntity = bookRepo.create(bookPayload);
+      const savedBook = await bookRepo.save(bookEntity);
+
+      // 3.b create variants — map DTO.variants -> BookFormatVariant rows
+      const variantsToSave = createBookDto.variants.map((vDto, idx) => {
+        const variant: Partial<BookFormatVariant> = {
+          // because BookFormatVariant.id is number PK and bookId is number in your current model,
+          // but you told me to keep variant IDs as number — however book id is UUID so we must set book relation properly.
+          // Note: TypeORM will set book relation via book property or book_id column; we set book (relation) here.
+          book: savedBook,
+          format: vDto.format as any,
+          // priceCents on variant DTO is 'priceCents' — use appropriate column names (price in your entity is numeric; we used priceCents on DTO)
+          // Convert integer cents to numeric stored value as string/number depending on DB mapping. Here we store as numeric/decimal:
+          price: (typeof (vDto as any).priceCents !== 'undefined') ? ((vDto as any).priceCents / 100) : undefined,
+          stockQuantity: vDto.stockQuantity ?? 0,
+          reservedQuantity: 0,
+          fileUrl: variantFileUrls[idx] ?? vDto.fileUrl ?? null,
+          isbn: vDto.isbn,
+
+          // NOTE: These are FUTURE features, currently they don't need any kind of attention
+          // previewPageCount: vDto.previewPageCount ?? 0,
+          // previewFileUrl: vDto.previewFileUrl ?? null,
+          // weightG: vDto.weightG ?? null,
+        };
+        return queryRunner.manager.create(BookFormatVariant as any, variant);
+      });
+
+      // Save all variants (in loop to allow DB adapter to assign numeric PKs correctly)
+      for (const variantEntity of variantsToSave) {
+        await queryRunner.manager.save(BookFormatVariant as any, variantEntity);
+      }
+
+      // 3.c commit
+      await queryRunner.commitTransaction();
+
+      // reload book with variants to return (fresh)
+      const bookWithRelations = await this.bookRepository.findOne({
+        where: { id: savedBook.id },
+        relations: ['formats', 'categories', 'tags', 'metrics', 'author'],
+      });
+
+      this.logger.log(`Book created: ${savedBook.id} (variants: ${createBookDto.variants.length})`);
+      return bookWithRelations!;
+    } catch (dbErr) {
+      // rollback + best-effort storage cleanup (uploadedKeys)
+      await queryRunner.rollbackTransaction();
+      this.logger.error('Failed to persist book + variants; rolled back transaction', dbErr);
+
+      if (uploadedKeys.length > 0 && typeof this.uploadBookFilesProvider.deleteObjects === 'function') {
+        try {
+          await this.uploadBookFilesProvider.deleteObjects(uploadedKeys);
+        } catch (cleanupErr) {
+          this.logger.error('Failed storage cleanup after DB rollback', cleanupErr);
+        }
+      }
+
+      throw new HttpException({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'Failed to create book',
+        error: (dbErr as Error).message ?? String(dbErr),
+      }, HttpStatus.INTERNAL_SERVER_ERROR);
+    } finally {
+      await queryRunner.release();
+    }
     // Persist book with strong transactional guarantees
-    return this.createBookProvider.createBook(finalDto);
+    // return this.createBookProvider.createBook(bookRepo);
   }
 
   /**
@@ -205,87 +429,27 @@ export class BooksService {
    * ```
    */
   async bulkCreate(
-    booksData: Array<{
+    inputs: Array<{
       createBookDto: CreateBookDto;
       files?: {
-        bookCover?: Express.Multer.File[];
+        bookCover?: Express.Multer.File;
         snapshots?: Express.Multer.File[];
-        file?: Express.Multer.File[];
+        variantFiles?: Express.Multer.File[]; // index -> variant
       };
     }>,
+    options?: { concurrency?: number },
   ): Promise<Book[]> {
-    const queryRunner: QueryRunner = this.dataSource.createQueryRunner();
-
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
     try {
-      const createdBooks: Book[] = [];
+      return await this.createBookProvider.bulkCreate(inputs, options)
 
-      for (const data of booksData) {
-        const { createBookDto, files } = data;
-
-        let coverImageUrl: string | null = null;
-        let snapshotUrls: string[] = [];
-        let bookFileUrls: string[] = [];
-
-        // Upload book file if provided
-        if (files?.file?.length) {
-          const uploadedFiles = await this.uploadBookFilesProvider.uploadPdfs(files.file);
-          bookFileUrls = uploadedFiles;
-        }
-
-        // Upload cover image if provided
-        if (files?.bookCover?.length) {
-          const coverFile = files.bookCover[0];
-          const [uploadedCoverUrl] = await this.uploadBookFilesProvider.uploadBuffers([
-            {
-              buffer: coverFile.buffer,
-              filename: coverFile.originalname,
-              mimetype: coverFile.mimetype,
-            },
-          ]);
-          coverImageUrl = uploadedCoverUrl;
-        }
-
-        // Upload snapshots if provided
-        if (files?.snapshots?.length) {
-          const snapshotPayload = files.snapshots.map((file) => ({
-            buffer: file.buffer,
-            filename: file.originalname,
-            mimetype: file.mimetype,
-          }));
-          snapshotUrls = await this.uploadBookFilesProvider.uploadBuffers(snapshotPayload);
-        }
-
-        // Merge file URLs with DTO
-        const bookData: CreateBookDto = {
-          ...createBookDto,
-          coverImageUrl,
-          snapshotUrls,
-          bookFileUrls,
-        };
-
-        // Create the book record using the same transaction
-        const book = queryRunner.manager.create(Book, bookData);
-        const savedBook = await queryRunner.manager.save(book);
-        createdBooks.push(savedBook);
-      }
-
-      // Commit all successfully created books
-      await queryRunner.commitTransaction();
-
-      this.logger.log(`✅ Bulk created ${createdBooks.length} books successfully`);
-      return createdBooks;
-    } catch (error: unknown) {
-      await queryRunner.rollbackTransaction();
+    } catch (error) {
 
       let message = 'Failed to create books';
       if (error instanceof Error) {
         message = error.message;
       }
 
-      this.logger.error(`❌ Bulk create failed: ${message}`);
+      this.logger.error(` Bulk create failed: ${message}`);
 
       throw new HttpException(
         {
@@ -295,8 +459,7 @@ export class BooksService {
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
-    } finally {
-      await queryRunner.release();
+
     }
   }
 
@@ -318,101 +481,325 @@ export class BooksService {
    * @param id - The ID of the book to retrieve.
    * @returns The Book entity if found, otherwise null.
    */
-  async getBookById(id: number): Promise<Book | null> {
+  async getBookById(id: string): Promise<Book | null> {
     return await this.bookRepository.findOneBy({ id });
   }
 
   /**
-   * Updates an existing book record.
+   * Update a book (hybrid).
    *
-   * This method performs the following operations:
-   * - Finds the target book by ID.
-   * - Uploads new files (book file, cover image, and snapshots) if provided.
-   * - Preserves existing URLs if no new files are uploaded.
-   * - Merges existing data with updated values from the DTO.
-   * - Saves the updated entity to the database.
+   * - Partial book fields are merged.
+   * - Cover & snapshots replaced only if files provided.
+   * - Variants are hybrid-updated:
+   *    - variant.id -> update
+   *    - no id -> create
+   *    - variants not present in DTO -> delete
+   * - Variant files mapping: variantFiles[i] -> variants[i]
    *
-   * @param id - The unique identifier of the book to update.
-   * @param updateBookDto - Data containing the fields to update.
-   * @param files - Optional files for updating the book cover, snapshots, or content file.
-   * @returns The updated {@link Book} entity.
-   * @throws {NotFoundException} If the book with the specified ID does not exist.
+   * @param bookId - uuid of book
+   * @param dto - UpdateBookDto (partial)
+   * @param files - optional files:
+   *   { bookCover?: Express.Multer.File, snapshots?: Express.Multer.File[], variantFiles?: Express.Multer.File[] }
    */
   async updateBook(
-    id: number,
-    updateBookDto: UpdateBookDto,
+    bookId: string,
+    dto: UpdateBookDto,
     files?: {
-      bookCover?: Express.Multer.File[];
+      bookCover?: Express.Multer.File;
       snapshots?: Express.Multer.File[];
-      file?: Express.Multer.File[];
+      variantFiles?: Express.Multer.File[]; // index -> dto.variants index
     },
   ): Promise<Book> {
-    const book = await this.bookRepository.findOneBy({ id });
+    // --- 0. Basic guards
+    if (!bookId) throw new BadRequestException('bookId is required');
+    if (!dto && !files) throw new BadRequestException('Nothing to update');
 
-    if (!book) {
-      throw new NotFoundException(`Book with ID ${id} not found`);
-    }
-
-    let updatedCoverUrl = book.coverImageUrl;
-    let updatedSnapshotUrls = book.snapshotUrls || [];
-    let updatedBookFileUrls = book.bookFileUrls || [];
-
-    /**
-     * Upload new book files (PDF, Excel, etc.) if provided.
-     * Replaces existing URLs with newly uploaded ones.
-     */
-    if (files?.file?.length) {
-      const uploadedFiles = await this.uploadBookFilesProvider.uploadPdfs(files.file);
-      updatedBookFileUrls = uploadedFiles;
-    }
-
-    /**
-     * Upload a new cover image if provided.
-     * Replaces the existing cover URL with the new one.
-     */
-    if (files?.bookCover?.length) {
-      const coverFile = files.bookCover[0];
-      const [newCoverUrl] = await this.uploadBookFilesProvider.uploadBuffers([
-        {
-          buffer: coverFile.buffer,
-          filename: coverFile.originalname,
-          mimetype: coverFile.mimetype,
-        },
-      ]);
-      updatedCoverUrl = newCoverUrl;
-    }
-
-    /**
-     * Upload new snapshot images if provided.
-     * Replaces existing snapshot URLs with the new ones.
-     */
-    if (files?.snapshots?.length) {
-      const snapshotPayload = files.snapshots.map((file) => ({
-        buffer: file.buffer,
-        filename: file.originalname,
-        mimetype: file.mimetype,
-      }));
-
-      const newSnapshots = await this.uploadBookFilesProvider.uploadBuffers(snapshotPayload);
-      updatedSnapshotUrls = newSnapshots;
-    }
-
-    /**
-     * Merge the existing book entity with updated fields and file URLs.
-     */
-    const updatedBook = this.bookRepository.merge(book, {
-      ...updateBookDto,
-      formats: updateBookDto.formats,
-      coverImageUrl: updatedCoverUrl,
-      snapshotUrls: updatedSnapshotUrls,
-      bookFileUrls: updatedBookFileUrls,
-      updatedAt: new Date(),
+    // Load current book with variants (we need variants to compute diffs)
+    const existing = await this.bookRepository.findOne({
+      where: { id: bookId },
+      relations: ['formats', 'categories', 'tags', 'author'],
     });
 
-    /**
-     * Save and return the updated book entity.
-     */
-    return await this.bookRepository.save(updatedBook);
+    if (!existing) throw new NotFoundException(`Book ${bookId} not found`);
+
+    // Prepare trackers for storage ops
+    const newlyUploadedKeys: string[] = []; // keys of newly uploaded files (to cleanup if failure)
+    const oldKeysToDeleteAfterCommit: string[] = []; // old keys we will delete only after DB commit
+
+    // Prepare new URLs (if uploaded)
+    let newCoverUrl: string | undefined;
+    let newSnapshotUrls: string[] | undefined;
+    const variantNewFileUrls: Array<string | null> = dto.variants ? new Array(dto.variants.length).fill(null) : [];
+
+    const extractKey = (url?: string | null) => {
+      try { return this.extractStorageKeyFromUrl(url ?? null); } catch { return null; }
+    };
+
+    // --- 1. Upload provided files (cover, snapshots, variant files)
+    try {
+      // 1.a cover
+      if (files?.bookCover) {
+        const payload = [{
+          buffer: files.bookCover.buffer,
+          filename: files.bookCover.originalname,
+          mimetype: files.bookCover.mimetype,
+        }];
+        const [url] = await this.uploadBookFilesProvider.uploadBuffers(payload);
+        newCoverUrl = url;
+        const k = extractKey(url);
+        if (k) newlyUploadedKeys.push(k);
+
+        // schedule deletion of old cover AFTER commit
+        if (existing.coverImageUrl) {
+          const oldKey = extractKey(existing.coverImageUrl);
+          if (oldKey) oldKeysToDeleteAfterCommit.push(oldKey);
+        }
+      }
+
+      // 1.b snapshots
+      if (files?.snapshots?.length) {
+        const payload = files.snapshots.map(f => ({
+          buffer: f.buffer,
+          filename: f.originalname,
+          mimetype: f.mimetype,
+        }));
+        const urls = await this.uploadBookFilesProvider.uploadBuffers(payload);
+        newSnapshotUrls = urls;
+        for (const u of urls) {
+          const k = extractKey(u);
+          if (k) newlyUploadedKeys.push(k);
+        }
+
+        // mark existing snapshot urls for deletion after commit (optional)
+        if (existing.snapshotUrls?.length) {
+          for (const u of existing.snapshotUrls) {
+            const oldKey = extractKey(u);
+            if (oldKey) oldKeysToDeleteAfterCommit.push(oldKey);
+          }
+        }
+      }
+
+      // 1.c variant files (index-based)
+      if (files?.variantFiles?.length && dto.variants?.length) {
+        const variantFiles = files.variantFiles;
+        // try batch upload for docs if provider supports it
+        if (typeof this.uploadBookFilesProvider.uploadPdfs === 'function') {
+          const urls = await this.uploadBookFilesProvider.uploadPdfs(variantFiles);
+          for (let i = 0; i < Math.min(urls.length, variantNewFileUrls.length); i++) {
+            variantNewFileUrls[i] = urls[i];
+            const k = extractKey(urls[i]);
+            if (k) newlyUploadedKeys.push(k);
+
+            // schedule deletion of old variant file (if variant exists with id)
+            const vDto = dto.variants[i];
+            if (vDto?.id) {
+              const existingVariant = existing.formats?.find(v => v.id === vDto.id);
+              if (existingVariant?.fileUrl) {
+                const oldKey = extractKey(existingVariant.fileUrl);
+                if (oldKey) oldKeysToDeleteAfterCommit.push(oldKey);
+              }
+            }
+          }
+        } else {
+          // fallback: upload individually
+          for (let i = 0; i < Math.min(variantFiles.length, variantNewFileUrls.length); i++) {
+            const f = variantFiles[i];
+            const [url] = await this.uploadBookFilesProvider.uploadBuffers([{
+              buffer: f.buffer,
+              filename: f.originalname,
+              mimetype: f.mimetype,
+            }]);
+            variantNewFileUrls[i] = url;
+            const k = extractKey(url);
+            if (k) newlyUploadedKeys.push(k);
+
+            const vDto = dto.variants[i];
+            if (vDto?.id) {
+              const existingVariant = existing.formats?.find(v => v.id === vDto.id);
+              if (existingVariant?.fileUrl) {
+                const oldKey = extractKey(existingVariant.fileUrl);
+                if (oldKey) oldKeysToDeleteAfterCommit.push(oldKey);
+              }
+            }
+          }
+        }
+      }
+    } catch (uploadErr) {
+      // If upload fails, attempt to cleanup newly uploaded keys and throw
+      this.logger.error('updateBook: upload failed, cleaning up new uploads', uploadErr);
+      if (newlyUploadedKeys.length && typeof this.uploadBookFilesProvider.deleteObjects === 'function') {
+        try { await this.uploadBookFilesProvider.deleteObjects(newlyUploadedKeys); } catch (cleanupErr) {
+          this.logger.error('updateBook: failed to cleanup partially uploaded assets', cleanupErr);
+        }
+      }
+      throw new HttpException({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'Failed to upload assets for update',
+        error: (uploadErr as Error).message ?? String(uploadErr),
+      }, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    // --- 2. Prepare DB changes and run inside a transaction
+    const qr = this.dataSource.createQueryRunner();
+    await qr.connect();
+    await qr.startTransaction();
+
+    try {
+      // 2.a merge book-level partial fields
+      const bookRepo = qr.manager.getRepository(Book);
+      const bookPatch: Partial<Book> = {};
+
+      // Only set fields if provided in dto
+      const updatableFields: Array<keyof UpdateBookDto> = [
+        'title', 'subtitle', 'description', 'genre', 'authorId', 'authorName', 'slug',
+        'metaTitle', 'metaDescription', 'isBestseller', 'isFeatured', 'isNewRelease',
+        'allowReviews', 'allowWishlist', 'visibility', 'categoryIds', 'tagIds'
+      ] as any;
+
+      for (const f of updatableFields) {
+        if ((dto as any)[f] !== undefined) {
+          // map camelCase DTO -> entity fields if naming differs
+          (bookPatch as any)[f === 'metaTitle' ? 'metaTitle' : f] = (dto as any)[f];
+        }
+      }
+
+      // Attach uploaded new URLs if any (replace behavior)
+      if (newCoverUrl) bookPatch.coverImageUrl = newCoverUrl;
+      if (newSnapshotUrls) bookPatch.snapshotUrls = newSnapshotUrls;
+
+      // update the book
+      const merged = bookRepo.merge(existing, bookPatch);
+      const savedBook = await bookRepo.save(merged);
+
+      // 2.b handle variants (hybrid)
+      // fetch existing variants freshest via queryRunner (ensure we operate on tx snapshot)
+      const variantRepo = qr.manager.getRepository(BookFormatVariant as any);
+      const existingVariants: any[] = await variantRepo.find({ where: { bookId: savedBook.id } });
+
+      const dtoVariants = dto.variants ?? [];
+
+      // Build maps for existing variants by id
+      const existingById = new Map<number, any>();
+      for (const v of existingVariants) existingById.set(v.id, v);
+
+      // Track which existing IDs are kept (present in DTO) — those not kept will be deleted
+      const keepIds = new Set<number>();
+
+      // Entities to create and update
+      const variantsToCreate: Partial<BookFormatVariant>[] = [];
+      const variantsToUpdate: any[] = [];
+
+      for (let i = 0; i < dtoVariants.length; i++) {
+        const vDto = dtoVariants[i];
+        if (vDto.id) {
+          // update existing variant
+          const existingV = existingById.get(vDto.id);
+          if (!existingV) {
+            // Provided id does not belong to this book
+            throw new BadRequestException(`Variant id ${vDto.id} not found for book ${bookId}`);
+          }
+          keepIds.add(vDto.id);
+
+          const updatePayload: Partial<BookFormatVariant> = {};
+          if (vDto.format !== undefined) updatePayload.format = vDto.format;
+          if ((vDto as any).priceCents !== undefined) updatePayload.price = (vDto as any).priceCents / 100;
+          if (vDto.stockQuantity !== undefined) updatePayload.stockQuantity = vDto.stockQuantity;
+          if (vDto.isbn !== undefined) updatePayload.isbn = vDto.isbn;
+
+          // Replace fileUrl if a new file was uploaded for this index
+          if (variantNewFileUrls[i]) {
+            updatePayload.fileUrl = variantNewFileUrls[i]!;
+          } else if (vDto.fileUrl !== undefined) {
+            // if DTO explicitly supplies fileUrl, use it (rare)
+            updatePayload.fileUrl = vDto.fileUrl;
+          }
+
+          // merge on existingV and prepare save
+          const mergedV = qr.manager.merge(BookFormatVariant as any, existingV, updatePayload);
+          variantsToUpdate.push(mergedV);
+        } else {
+          // create new variant
+          const createPayload: Partial<BookFormatVariant> = {
+            bookId: savedBook.id,
+            book: savedBook,
+            format: vDto.format,
+            price: (vDto as any).priceCents !== undefined ? ((vDto as any).priceCents / 100) : 0,
+            stockQuantity: vDto.stockQuantity ?? 0,
+            reservedQuantity: 0,
+            fileUrl: variantNewFileUrls[i] ?? vDto.fileUrl ?? null,
+            isbn: vDto.isbn ?? null,
+          };
+          variantsToCreate.push(createPayload);
+        }
+      }
+
+      // Determine deletes: existing variants whose id is NOT in keepIds
+      const variantsToDelete = existingVariants.filter(v => !keepIds.has(v.id));
+
+      // Save updates & creations inside same transaction
+      if (variantsToUpdate.length > 0) {
+        // bulk save updates (TypeORM will issue updates)
+        await qr.manager.save(BookFormatVariant as any, variantsToUpdate);
+      }
+
+      if (variantsToCreate.length > 0) {
+        const created = await qr.manager.save(BookFormatVariant as any, variantsToCreate);
+      }
+
+      if (variantsToDelete.length > 0) {
+        const deleteIds = variantsToDelete.map(v => v.id);
+        await qr.manager.delete(BookFormatVariant as any, deleteIds);
+        // schedule deletion of files for deleted variants after commit
+        for (const v of variantsToDelete) {
+          if (v.fileUrl) {
+            const k = extractKey(v.fileUrl);
+            if (k) oldKeysToDeleteAfterCommit.push(k);
+          }
+        }
+      }
+
+      // 2.c commit
+      await qr.commitTransaction();
+
+      // --- 3. Post-commit cleanup: delete old keys (best-effort)
+      if (oldKeysToDeleteAfterCommit.length && typeof this.uploadBookFilesProvider.deleteObjects === 'function') {
+        try {
+          await this.uploadBookFilesProvider.deleteObjects(oldKeysToDeleteAfterCommit);
+        } catch (cleanupErr) {
+          this.logger.error('updateBook: failed to delete old files after commit', cleanupErr);
+          // do not fail the API — cleanup is best-effort
+        }
+      }
+
+      // Return reloaded book with relations
+      const updated = await this.bookRepository.findOne({
+        where: { id: savedBook.id },
+        relations: ['formats', 'categories', 'tags', 'metrics', 'author'],
+      });
+
+      this.logger.log(`updateBook: updated book ${savedBook.id}`);
+      return updated!;
+    } catch (dbErr) {
+      // rollback & cleanup newly uploaded keys (best-effort)
+      await qr.rollbackTransaction();
+      this.logger.error('updateBook: DB transaction failed, rolling back', dbErr);
+
+      if (newlyUploadedKeys.length && typeof this.uploadBookFilesProvider.deleteObjects === 'function') {
+        try {
+          await this.uploadBookFilesProvider.deleteObjects(newlyUploadedKeys);
+        } catch (cleanupErr) {
+          this.logger.error('updateBook: failed to cleanup newly uploaded assets after rollback', cleanupErr);
+        }
+      }
+
+      throw new HttpException({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'Failed to update book',
+        error: (dbErr as Error).message ?? String(dbErr),
+      }, HttpStatus.INTERNAL_SERVER_ERROR);
+    } finally {
+      await qr.release();
+    }
   }
 
   async findAll(queryParams?: FindAllBookQueryParam): Promise<FindAllBookResponse> {
@@ -433,7 +820,7 @@ export class BooksService {
     };
   }
 
-  async deleteBook(id: number, options: DeleteOption) {
+  async deleteBook(id: string, options: DeleteOption) {
     const result = await this.deleteBookProvider.deleteBook(id, options);
     return result;
   }

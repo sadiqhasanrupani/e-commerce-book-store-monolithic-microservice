@@ -1,22 +1,98 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateBookDto } from './create-book.dto';
-import { ValidateNested, IsOptional } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  MaxLength,
+  IsEnum,
+  IsArray,
+  ValidateNested,
+  IsUUID,
+  IsBoolean
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { CreateAuthorDto } from '../../author/dtos/create-author.dto';
+import { BookGenre } from '../enums/book-genres.enum';
+import { UpdateBookVariantDto } from './update-book-variant.dto';
 
-/**
- * Data Transfer Object for updating a book.
- *
- * Extends `CreateBookDto` with all fields optional, allowing partial updates.
- * Optionally supports updating the book's author by including an `author` object.
- */
-export class UpdateBookDto extends PartialType(CreateBookDto) {
-  /**
-   * Optional nested author data.
-   * If provided, allows updating the author information related to this book.
-   */
+export class UpdateBookDto {
   @IsOptional()
-  @ValidateNested()
-  @Type(() => CreateAuthorDto)
-  author?: CreateAuthorDto;
+  @IsString()
+  @MaxLength(255)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  subtitle?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsEnum(BookGenre)
+  genre?: BookGenre;
+
+  @IsOptional()
+  @IsUUID()
+  authorId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  authorName?: string;
+
+  @IsOptional()
+  @IsString()
+  slug?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  metaTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  metaDescription?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isBestseller?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isFeatured?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isNewRelease?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  allowReviews?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  allowWishlist?: boolean;
+
+  @IsOptional()
+  @IsEnum(['public', 'private', 'draft'])
+  visibility?: 'public' | 'private' | 'draft';
+
+  /** category ids */
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  categoryIds?: string[];
+
+  /** tag ids */
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  tagIds?: string[];
+
+  /** Hybrid variant update */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdateBookVariantDto)
+  variants?: UpdateBookVariantDto[];
 }

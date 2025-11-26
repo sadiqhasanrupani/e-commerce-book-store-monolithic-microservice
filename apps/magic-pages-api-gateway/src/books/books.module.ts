@@ -18,18 +18,21 @@ import { FindBookProvider } from './providers/find-book.provider';
 
 // entities
 import { Book } from '@app/contract/books/entities/book.entity';
+import { BookMetric } from '@app/contract/books/entities/book-metrics.entity';
+import { BookFormatVariant } from '@app/contract/books/entities/book-format-varient.entity';
+import { Category } from '@app/contract/books/entities/categories.entity';
+import { Tag } from '@app/contract/books/entities/tags.entity';
+import { Author } from '@app/contract/author/entities/author.entity';
 
 // configs
 import { STORAGE_CONFIG } from '@app/contract/storage/configs/storage.config';
-import { Author } from '@app/contract/books/entities/author.entity';
-import { BoookMetricsProvider } from './providers/book-metrics.provider';
-import { BookMetrics } from '@app/contract/books/entities/book-metrics.entity';
+// import { BoookMetricsProvider } from './providers/book-metrics.provider';
 
 @Module({
   imports: [
     UploadModule,
     ClientsModule.register([STORAGE_CONFIG.CLIENTS]),
-    TypeOrmModule.forFeature([Book, Author, BookMetrics]),
+    TypeOrmModule.forFeature([Book, Author, BookMetric, BookFormatVariant, Category, Tag]),
     PaginationModule,
   ],
   controllers: [BooksController],
@@ -39,8 +42,7 @@ import { BookMetrics } from '@app/contract/books/entities/book-metrics.entity';
     UploadBookFilesProvider,
     DeleteBookProvider,
     FindBookProvider,
-    BoookMetricsProvider,
   ],
   exports: [BooksService, TypeOrmModule],
 })
-export class BooksModule {}
+export class BooksModule { }

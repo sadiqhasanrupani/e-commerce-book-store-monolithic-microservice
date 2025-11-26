@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
-import { BookMetrics } from '@app/contract/books/entities/book-metrics.entity';
+import { BookMetric } from '@app/contract/books/entities/book-metrics.entity';
 import { subDays } from 'date-fns';
 
 interface MetricsFilterOptions {
@@ -17,9 +17,9 @@ export class BoookMetricsProvider {
   private readonly logger = new Logger(BoookMetricsProvider.name);
 
   constructor(
-    @InjectRepository(BookMetrics)
-    private readonly metricsRepository: Repository<BookMetrics>,
-  ) {}
+    @InjectRepository(BookMetric)
+    private readonly metricsRepository: Repository<BookMetric>,
+  ) { }
 
   /**
    * Record an analytic event (view, purchase, wishlist, etc.)
@@ -29,14 +29,14 @@ export class BoookMetricsProvider {
    * - Later this can publish to Kafka/NATS for async aggregation.
    */
   async recordEvent(
-    bookId: number,
+    bookId: string,
     event: 'view' | 'purchase' | 'wishlist' | 'download' | 'rating',
     value?: number,
   ): Promise<void> {
     try {
-      let metric = await this.metricsRepository.findOne({ where: { bookId } });
+      let metric = await this.metricsRepository.findOne({ where: { id: bookId } });
       if (!metric) {
-        metric = this.metricsRepository.create({ bookId });
+        metric = this.metricsRepository.create({ id: bookId });
       }
 
       switch (event) {

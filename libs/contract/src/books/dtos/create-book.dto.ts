@@ -1,137 +1,125 @@
 import {
   IsEnum,
-  IsNumber,
-  IsOptional,
   IsString,
-  IsDateString,
   MaxLength,
-  ValidateNested,
-  IsInt,
-  Min,
-  Max,
+  IsOptional,
   IsArray,
   IsBoolean,
+  ValidateNested,
+  IsUUID,
 } from 'class-validator';
-
 import { Type } from 'class-transformer';
 import { BookGenre } from '../enums/book-genres.enum';
-import { BookFormat } from '../enums/book-format.enum';
-import { BookAvailability } from '../enums/book-avaliability.enum';
 import { CreateAuthorDto } from '../../author/dtos/create-author.dto';
+import { CreateBookVariantDto } from './create-book-variant.dto';
 
-/**
- * DTO for creating a new book.
- * Matches frontend validation and backend entity structure.
- */
 export class CreateBookDto {
-  /** Title of the book (max 255 characters). */
+  /** Title (required, unique constraint on DB level). */
   @IsString()
   @MaxLength(255)
   title: string;
 
-  /** Description of the book (min 10 characters). */
-  @IsString()
-  description: string;
-
-  /** Genre of the book (must be one of BookGenre enum). */
-  @IsEnum(BookGenre)
-  genre: BookGenre;
-
-  /** Format of the book (EBOOK, PAPERBACK, HARDCOVER, etc.). */
-  @IsArray()
-  @IsEnum(BookFormat, { each: true })
-  @Type(() => String)
-  formats: BookFormat[];
-
-  /** Availability status (AVAILABLE, OUT_OF_STOCK, PREORDER). */
-  @IsEnum(BookAvailability)
-  availability: BookAvailability;
-
-  /** Optional existing author ID (if author already exists). */
+  /** Optional subtitle. */
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  authorId?: number;
+  @IsString()
+  @MaxLength(255)
+  subtitle?: string;
 
-  /** Optional nested author details for inline creation. */
+  /** Long description. */
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  /** Genre (Enum). */
+  @IsOptional()
+  @IsEnum(BookGenre)
+  genre?: BookGenre;
+
+  /** Optional existing author reference. */
+  @IsOptional()
+  @IsUUID()
+  authorId?: string;
+
+  /** Optional inline author creation. */
   @IsOptional()
   @ValidateNested()
   @Type(() => CreateAuthorDto)
   author?: CreateAuthorDto;
 
-  /** Name of the author (required for both new and existing authors). */
-  // @IsOptional()
+  /** Redundant authorName (stored in DB) for SEO & display indexing. */
+  @IsOptional()
   @IsString()
   @MaxLength(100)
-  authorName: string;
+  authorName?: string;
 
-  /** Published date of the book (ISO string). */
-  // @IsOptional()
-  @IsDateString()
-  publishedDate: string;
+  /** Slug for SEO (optional, auto-generated on backend). */
+  @IsOptional()
+  @IsString()
+  slug?: string;
 
-  /** Price (decimal up to 2 places, non-negative). */
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  price: number;
+  /** Metadata (SEO) */
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  metaTitle?: string;
 
-  /** Rating (decimal up to 1 place, between 0 and 5). */
-  @IsNumber({ maxDecimalPlaces: 1 })
-  @Min(0)
-  @Max(5)
-  rating: number;
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  metaDescription?: string;
 
-  /** Cover image file URL (uploaded to CDN / MinIO). */
+  /** Cover image URL */
   @IsOptional()
   @IsString()
   coverImageUrl?: string | null;
 
-  /** Array of snapshot URLs (5 for physical, 10 for eBook). */
+  /** Snapshot URLs array */
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   snapshotUrls?: string[];
 
-  /** Array of book file URLs (PDF, EPUB, DOCX, etc.). */
+  /** Visibility: public | private | draft */
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  bookFileUrls?: string[];
+  @IsEnum(['public', 'private', 'draft'])
+  visibility?: 'public' | 'private' | 'draft';
 
-  /** Bestseller flag. */
+  /** Flags */
   @IsOptional()
   @IsBoolean()
   isBestseller?: boolean;
 
-  /** Featured flag. */
   @IsOptional()
   @IsBoolean()
   isFeatured?: boolean;
 
-  /** New release flag. */
   @IsOptional()
   @IsBoolean()
   isNewRelease?: boolean;
 
-  /** Whether users can leave reviews. */
   @IsOptional()
   @IsBoolean()
   allowReviews?: boolean;
 
-  /** Whether users can add to wishlist. */
   @IsOptional()
   @IsBoolean()
   allowWishlist?: boolean;
 
-  /** Whether notifications are enabled for this book. */
+  /** Category IDs (UUIDs) */
   @IsOptional()
-  @IsBoolean()
-  enableNotifications?: boolean;
+  @IsArray()
+  @IsUUID('all', { each: true })
+  categoryIds?: string[];
 
-  /** Visibility status (public, private, draft). */
+  /** Tag IDs */
   @IsOptional()
-  @IsEnum(['public', 'private', 'draft'], {
-    message: 'Visibility must be either public, private, or draft',
-  })
-  visibility?: 'public' | 'private' | 'draft';
+  @IsArray()
+  @IsUUID('all', { each: true })
+  tagIds?: string[];
+
+  /** Format variants (PDF/EPUB/Physical variations) */
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateBookVariantDto)
+  variants: CreateBookVariantDto[];
 }
