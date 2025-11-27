@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, Index } from 'typeorm';
 import { CartItem } from './cart-item.entity';
+import { CartStatus } from '../enums/cart-status.enum';
 
 @Entity('carts')
 export class Cart {
@@ -10,8 +11,11 @@ export class Cart {
     @Column({ name: 'user_id' })
     userId: number;
 
-    @Column({ length: 32, default: 'ACTIVE' })
-    status: string;
+    @Column({ type: 'enum', enum: CartStatus, default: CartStatus.ACTIVE })
+    status: CartStatus;
+
+    @Column({ type: 'timestamptz', nullable: true, name: 'checkout_started_at' })
+    checkoutStartedAt?: Date;
 
     @CreateDateColumn({ name: 'created_at' })
     createdAt: Date;

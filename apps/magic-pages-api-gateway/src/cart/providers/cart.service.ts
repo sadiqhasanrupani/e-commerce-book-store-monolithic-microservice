@@ -16,6 +16,7 @@ import { UpdateCartItemDto } from '@app/contract/carts/dtos/update-cart-item.dto
 import { CartResponseDto, CartItemResponseDto } from '@app/contract/carts/dtos/cart-response.dto';
 import { RedisService } from '@app/redis';
 import { BookFormat, isPhysicalFormat } from '@app/contract/books/enums/book-format.enum';
+import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 
 const CART_CACHE_TTL = 3600; // 1 hour
 const RESERVATION_TTL = 900; // 15 minutes
@@ -48,12 +49,12 @@ export class CartService {
 
         // Get or create cart
         let cart = await this.cartRepository.findOne({
-            where: { userId, status: 'ACTIVE' },
+            where: { userId, status: CartStatus.ACTIVE },
             relations: ['items', 'items.bookFormatVariant', 'items.bookFormatVariant.book'],
         });
 
         if (!cart) {
-            cart = this.cartRepository.create({ userId, status: 'ACTIVE', items: [] });
+            cart = this.cartRepository.create({ userId, status: CartStatus.ACTIVE, items: [] });
             await this.cartRepository.save(cart);
         }
 
@@ -76,11 +77,11 @@ export class CartService {
         try {
             // Get or create cart
             let cart = await queryRunner.manager.findOne(Cart, {
-                where: { userId, status: 'ACTIVE' },
+                where: { userId, status: CartStatus.ACTIVE },
             });
 
             if (!cart) {
-                cart = queryRunner.manager.create(Cart, { userId, status: 'ACTIVE' });
+                cart = queryRunner.manager.create(Cart, { userId, status: CartStatus.ACTIVE });
                 await queryRunner.manager.save(cart);
             }
 
@@ -329,7 +330,7 @@ export class CartService {
 
         try {
             const cart = await queryRunner.manager.findOne(Cart, {
-                where: { userId, status: 'ACTIVE' },
+                where: { userId, status: CartStatus.ACTIVE },
                 relations: ['items', 'items.bookFormatVariant'],
             });
 
