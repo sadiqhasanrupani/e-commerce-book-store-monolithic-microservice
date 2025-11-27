@@ -25,6 +25,16 @@ services:
     volumes:
       - ./minio-data:/data
 
+  redis:
+    image: redis:7-alpine
+    container_name: magic-pages-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - ./redis-data:/data
+
   books:
     build:
       context: .
@@ -73,3 +83,4 @@ services:
       - books
       - storage
       - postgres
+      - redis

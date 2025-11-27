@@ -9,6 +9,7 @@ import jwtConfig from '@app/contract/auth/configs/jwt.config';
 
 import environmentSchema from '../schemas/environment.schema';
 import rabbitmqConfig from '../configs/rabbitmq.config';
+import redisConfig from '../configs/redis.config';
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
@@ -17,7 +18,7 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: NODE_ENV ? `.env.${NODE_ENV}` : '.env',
-      load: [databaseConfig, minioConfig, jwtConfig, hashConfig, rabbitmqConfig],
+      load: [databaseConfig, minioConfig, jwtConfig, hashConfig, rabbitmqConfig, redisConfig],
       validationSchema: environmentSchema,
     }),
     ConfigModule.forFeature(jwtConfig),
