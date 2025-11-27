@@ -11,6 +11,7 @@ import { Book } from '@app/contract/books/entities/book.entity';
 import { RedisModule } from '@app/redis';
 import { ConfigService } from '@nestjs/config';
 import { ICartCleanupStrategy } from './interfaces/cart-cleanup-strategy.interface';
+import { TracingInterceptor } from './interceptors/tracing.interceptor';
 
 @Module({
   imports: [
