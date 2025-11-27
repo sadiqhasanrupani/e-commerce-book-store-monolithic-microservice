@@ -9,6 +9,7 @@ import {
   Request,
   HttpCode,
   HttpStatus,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { CartService } from './providers/cart.service';
@@ -17,11 +18,13 @@ import { UpdateCartItemDto } from '@app/contract/carts/dtos/update-cart-item.dto
 import { CartResponseDto } from '@app/contract/carts/dtos/cart-response.dto';
 import { Auth } from '../auth/decorator/auth.decorator';
 import { AuthTypes } from '@app/contract/auth/enums/auth-types.enum';
+import { TracingInterceptor } from './interceptors/tracing.interceptor';
 
 @ApiTags('Cart')
 @ApiBearerAuth()
 @Controller('cart')
 @Auth(AuthTypes.BEARER)
+@UseInterceptors(TracingInterceptor)
 export class CartController {
   constructor(private readonly cartService: CartService) { }
 

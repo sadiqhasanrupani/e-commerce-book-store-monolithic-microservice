@@ -65,6 +65,63 @@ ACTIVE → CHECKOUT → COMPLETED (payment success)
 4. **Completion**: Stock decremented, reservation released
 5. **Abandonment**: Reservation released, stock returned
 
+### Cart Status Flow Diagram
+
+```
+┌─────────┐
+│ ACTIVE  │ ← User adds/removes items
+└────┬────┘
+     │ POST /cart/checkout
+     ▼
+┌──────────┐
+│ CHECKOUT │ ← Payment processing
+└────┬─────┘
+     │
+     ├─ Payment Success ──→ ┌───────────┐
+     │                      │ COMPLETED │ → Archived to cart_history
+     │                      └───────────┘
+     │
+     └─ Payment Failed ───→ ┌───────────┐
+                            │ ABANDONED │ → Reservations released
+                            └───────────┘
+```
+
+### Error Handling Mechanism
+
+All cart operations use a centralized exception filter that:
+
+1. **Catches all exceptions** (HTTP and unexpected)
+2. **Transforms to user-friendly format** with error codes
+3. **Logs with context** (user ID, path, method)
+4. **Returns consistent JSON** structure
+
+**Example Error Flow:**
+```typescript
+// Backend: Cart Service throws error
+throw new ConflictException({
+  code: 'INSUFFICIENT_STOCK',
+  message: 'Insufficient stock',
+  details: { available: 5, requested: 10, variantId: 123 }
+});
+
+// Exception Filter transforms it
+{
+  "success": false,
+  "error": {
+    "code": "INSUFFICIENT_STOCK",
+    "message": "Sorry, we don't have enough stock for this item.",
+    "details": {
+      "available": 5,
+      "requested": 10,
+      "variantId": 123
+    },
+    "suggestedAction": "Please reduce the quantity or try again later."
+  }
+}
+
+// Frontend receives user-friendly error
+```
+
 ---
 
 ## API Endpoints

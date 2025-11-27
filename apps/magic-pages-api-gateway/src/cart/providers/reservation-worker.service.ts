@@ -8,6 +8,7 @@ import { BookFormatVariant } from '@app/contract/books/entities/book-format-vari
 import { isPhysicalFormat } from '@app/contract/books/enums/book-format.enum';
 import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { DataSource } from 'typeorm';
+import { ICartCleanupStrategy } from '../interfaces/cart-cleanup-strategy.interface';
 
 /**
  * Optimized background worker for cart cleanup
@@ -15,7 +16,7 @@ import { DataSource } from 'typeorm';
  * Runs every 5 minutes to archive completed/abandoned carts
  */
 @Injectable()
-export class ReservationWorkerService {
+export class ReservationWorkerService implements ICartCleanupStrategy {
   private readonly logger = new Logger(ReservationWorkerService.name);
 
   constructor(
@@ -153,5 +154,12 @@ export class ReservationWorkerService {
 
     // Process this single cart (reuse the logic)
     await this.processCompletedCarts();
+  }
+
+  /**
+   * Get strategy name for logging/monitoring
+   */
+  getStrategyName(): string {
+    return 'CronBasedCleanup';
   }
 }
