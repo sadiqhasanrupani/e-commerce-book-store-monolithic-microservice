@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { CartController } from './cart.controller';
 import { PaymentWebhookController } from './payment-webhook.controller';
 import { CartService } from './providers/cart.service';
@@ -19,12 +21,37 @@ import { GooglePayProvider } from './providers/googlepay.provider';
 import { Order } from '@app/contract/orders/entities/order.entity';
 import { OrderItem } from '@app/contract/orders/entities/order-item.entity';
 import { OrderStatusLog } from '@app/contract/orders/entities/order-status-log.entity';
+import Redis from 'ioredis';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Cart, CartItem, BookFormatVariant, Book, Order, OrderItem, OrderStatusLog]),
     RedisModule,
     ScheduleModule.forRoot(),
+    ThrottlerModule.forRootAsync({
+      imports: [RedisModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        throttlers: [
+          {
+            name: 'checkout',
+            ttl: 60000, // 1 minute
+            limit: 10, // 10 requests per minute per user
+          },
+          {
+            name: 'global',
+            ttl: 60000,
+            limit: 100, // 100 requests per minute globally
+          },
+        ],
+        storage: new ThrottlerStorageRedisService(
+          new Redis({
+            host: configService.get('REDIS_HOST', 'localhost'),
+            port: configService.get('REDIS_PORT', 6379),
+          }),
+        ),
+      }),
+    }),
   ],
   controllers: [CartController, PaymentWebhookController],
   providers: [

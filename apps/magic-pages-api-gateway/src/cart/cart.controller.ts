@@ -12,6 +12,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { CartService } from './providers/cart.service';
 import { CreateCartItemDto } from '@app/contract/carts/dtos/create-cart-item.dto';
 import { UpdateCartItemDto } from '@app/contract/carts/dtos/update-cart-item.dto';
