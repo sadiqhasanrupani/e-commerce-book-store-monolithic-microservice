@@ -12,7 +12,8 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IPaymentProvider } from './interfaces/payment-provider.interface';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Order, PaymentStatus } from '@app/contract/orders/entities/order.entity';
+import { Order } from '@app/contract/orders/entities/order.entity';
+import { PaymentStatus } from '@app/contract/orders/enums/order-status.enum';
 import { Repository } from 'typeorm';
 import { Cart } from '@app/contract/carts/entities/cart.entity';
 import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';

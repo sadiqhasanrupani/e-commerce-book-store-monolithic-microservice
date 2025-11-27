@@ -10,21 +10,7 @@ import {
 import { User } from '@app/contract/users/entities/user.entity';
 import { OrderItem } from './order-item.entity';
 import { OrderStatusLog } from './order-status-log.entity';
-
-export enum PaymentStatus {
-  PENDING = 'PENDING',
-  PAID = 'PAID',
-  FAILED = 'FAILED',
-  REFUNDED = 'REFUNDED',
-}
-
-export enum FulfillmentStatus {
-  NOT_STARTED = 'NOT_STARTED',
-  PROCESSING = 'PROCESSING',
-  SHIPPED = 'SHIPPED',
-  DELIVERED = 'DELIVERED',
-  CANCELLED = 'CANCELLED',
-}
+import { PaymentStatus, FulfillmentStatus } from '../enums/order-status.enum';
 
 @Entity('orders')
 export class Order {
