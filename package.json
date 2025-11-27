@@ -17,7 +17,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./apps/magic-pages-nest-project/test/jest-e2e.json",
+    "test:e2e": "NODE_ENV=test jest --config ./test/e2e/jest-e2e.json --runInBand",
+    "test:e2e:watch": "NODE_ENV=test jest --config ./test/e2e/jest-e2e.json --watch",
     "test:integration": "NODE_OPTIONS=--localstorage-file=/tmp/jest-localstorage jest --config jest.integration.config.ts"
   },
   "dependencies": {
