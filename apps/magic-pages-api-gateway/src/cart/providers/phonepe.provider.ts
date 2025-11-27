@@ -38,8 +38,13 @@ export class PhonePeProvider implements IPaymentProvider {
     private readonly apiBaseUrl: string;
 
     constructor(private readonly configService: ConfigService) {
-        this.merchantId = this.configService.get<string>('PHONEPE_MERCHANT_ID');
-        this.saltKey = this.configService.get<string>('PHONEPE_SALT_KEY');
+        this.merchantId = this.configService.get<string>('PHONEPE_MERCHANT_ID') || '';
+        this.saltKey = this.configService.get<string>('PHONEPE_SALT_KEY') || '';
+
+        if (!this.merchantId || !this.saltKey) {
+            this.logger.warn('PhonePe configuration missing (MERCHANT_ID or SALT_KEY)');
+        }
+
         this.saltIndex = this.configService.get<string>('PHONEPE_SALT_INDEX', '1');
         this.apiBaseUrl = this.configService.get<string>(
             'PHONEPE_API_URL',
@@ -51,6 +56,13 @@ export class PhonePeProvider implements IPaymentProvider {
         return PaymentProvider.PHONEPE;
     }
 
+    /**
+     * Initiate a payment request with PhonePe
+     * 
+     * @param request Payment initiation details
+     * @returns Payment initiation response with transaction ID and payment URL
+     * @throws Error if payment initiation fails
+     */
     async initiatePayment(request: PaymentInitiationRequest): Promise<PaymentInitiationResponse> {
         this.logger.log(`Initiating PhonePe payment for order ${request.orderId}`);
 
@@ -103,6 +115,13 @@ export class PhonePeProvider implements IPaymentProvider {
         }
     }
 
+    /**
+     * Verify webhook signature from PhonePe
+     * 
+     * @param headers Request headers containing X-VERIFY
+     * @param body Request body containing base64 encoded response
+     * @returns Verification result with status and transaction ID
+     */
     async verifyWebhook(
         headers: Record<string, string>,
         body: any,
@@ -135,6 +154,12 @@ export class PhonePeProvider implements IPaymentProvider {
         }
     }
 
+    /**
+     * Check payment status with PhonePe
+     * 
+     * @param transactionId Transaction ID to check
+     * @returns Current payment status
+     */
     async getPaymentStatus(transactionId: string): Promise<PaymentStatusResponse> {
         this.logger.log(`Checking PhonePe payment status for ${transactionId}`);
 
@@ -159,6 +184,12 @@ export class PhonePeProvider implements IPaymentProvider {
         }
     }
 
+    /**
+     * Initiate a refund for a transaction
+     * 
+     * @param request Refund details
+     * @returns Refund initiation response
+     */
     async initiateRefund(request: RefundRequest): Promise<RefundResponse> {
         this.logger.log(`Initiating PhonePe refund for ${request.transactionId}`);
 
@@ -178,6 +209,12 @@ export class PhonePeProvider implements IPaymentProvider {
         };
     }
 
+    /**
+     * Check if a specific feature is supported by this provider
+     * 
+     * @param feature Feature to check
+     * @returns True if supported, false otherwise
+     */
     supportsFeature(feature: 'QR_CODE' | 'INTENT' | 'RECURRING' | 'INTERNATIONAL'): boolean {
         const supportedFeatures = {
             QR_CODE: true,

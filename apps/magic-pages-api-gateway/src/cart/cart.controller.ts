@@ -16,6 +16,8 @@ import { CartService } from './providers/cart.service';
 import { CreateCartItemDto } from '@app/contract/carts/dtos/create-cart-item.dto';
 import { UpdateCartItemDto } from '@app/contract/carts/dtos/update-cart-item.dto';
 import { CartResponseDto } from '@app/contract/carts/dtos/cart-response.dto';
+import { CheckoutDto } from '@app/contract/carts/dtos/checkout.dto';
+import { CheckoutService } from './providers/checkout.service';
 import { Auth } from '../auth/decorator/auth.decorator';
 import { AuthTypes } from '@app/contract/auth/enums/auth-types.enum';
 import { TracingInterceptor } from './interceptors/tracing.interceptor';
@@ -26,7 +28,10 @@ import { TracingInterceptor } from './interceptors/tracing.interceptor';
 @Auth(AuthTypes.BEARER)
 @UseInterceptors(TracingInterceptor)
 export class CartController {
-  constructor(private readonly cartService: CartService) { }
+  constructor(
+    private readonly cartService: CartService,
+    private readonly checkoutService: CheckoutService,
+  ) { }
 
   @Get()
   @ApiOperation({ summary: 'Get current user cart' })
@@ -64,22 +69,19 @@ export class CartController {
   }
 
   @Post('clear')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Clear all items from cart' })
+  @ApiOperation({ summary: 'Clear cart' })
   @ApiResponse({ status: 204, description: 'Cart cleared successfully' })
-  async clearCart(@Request() req): Promise<void> {
-    await this.cartService.clearCart(req.user.id);
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async clearCart(@Request() req) {
+    return this.cartService.clearCart(req.user.id);
   }
 
   @Post('checkout')
-  @ApiOperation({ summary: 'Checkout cart and create order' })
-  @ApiResponse({ status: 201, description: 'Order created successfully' })
-  @ApiResponse({ status: 409, description: 'Insufficient stock or invalid cart' })
-  async checkout(@Request() req): Promise<{ orderId: string; message: string }> {
-    // Stub for Sprint 1 - full implementation in Sprint 2
-    return {
-      orderId: 'stub-order-id',
-      message: 'Checkout endpoint - to be implemented in Sprint 2',
-    };
+  @ApiOperation({ summary: 'Checkout cart' })
+  @ApiResponse({ status: 201, description: 'Checkout initiated' })
+  async checkout(@Request() req, @Body() dto: CheckoutDto) {
+    // TODO: Extract idempotency key from headers
+    const idempotencyKey = req.headers['idempotency-key'];
+    return this.checkoutService.checkout(req.user.id, dto, idempotencyKey);
   }
 }

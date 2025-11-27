@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CartController } from './cart.controller';
+import { PaymentWebhookController } from './payment-webhook.controller';
 import { CartService } from './providers/cart.service';
 import { ReservationWorkerService } from './providers/reservation-worker.service';
 import { Cart } from '@app/contract/carts/entities/cart.entity';
@@ -12,18 +13,27 @@ import { RedisModule } from '@app/redis';
 import { ConfigService } from '@nestjs/config';
 import { ICartCleanupStrategy } from './interfaces/cart-cleanup-strategy.interface';
 import { TracingInterceptor } from './interceptors/tracing.interceptor';
+import { CheckoutService } from './providers/checkout.service';
+import { PhonePeProvider } from './providers/phonepe.provider';
+import { GooglePayProvider } from './providers/googlepay.provider';
+import { Order } from '@app/contract/orders/entities/order.entity';
+import { OrderItem } from '@app/contract/orders/entities/order-item.entity';
+import { OrderStatusLog } from '@app/contract/orders/entities/order-status-log.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Cart, CartItem, BookFormatVariant, Book]),
+    TypeOrmModule.forFeature([Cart, CartItem, BookFormatVariant, Book, Order, OrderItem, OrderStatusLog]),
     RedisModule,
     ScheduleModule.forRoot(),
   ],
-  controllers: [CartController],
+  controllers: [CartController, PaymentWebhookController],
   providers: [
     CartService,
+    CheckoutService,
     ReservationWorkerService,
     TracingInterceptor,
+    PhonePeProvider,
+    GooglePayProvider,
     // Strategy pattern for cleanup
     {
       provide: 'CART_CLEANUP_STRATEGY',
@@ -40,7 +50,21 @@ import { TracingInterceptor } from './interceptors/tracing.interceptor';
       },
       inject: [ConfigService, ReservationWorkerService],
     },
+    // Strategy pattern for payment
+    {
+      provide: 'PAYMENT_PROVIDER',
+      useFactory: (
+        configService: ConfigService,
+        phonePe: PhonePeProvider,
+        googlePay: GooglePayProvider,
+      ) => {
+        const provider = configService.get<string>('PAYMENT_PROVIDER', 'phonepe');
+        if (provider === 'googlepay') return googlePay;
+        return phonePe;
+      },
+      inject: [ConfigService, PhonePeProvider, GooglePayProvider],
+    },
   ],
-  exports: [CartService],
+  exports: [CartService, CheckoutService],
 })
 export class CartModule { }

@@ -32,8 +32,12 @@ export class GooglePayProvider implements IPaymentProvider {
   private readonly merchantName: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.merchantVPA = this.configService.get<string>('GOOGLEPAY_MERCHANT_VPA');
+    this.merchantVPA = this.configService.get<string>('GOOGLEPAY_MERCHANT_VPA') || '';
     this.merchantName = this.configService.get<string>('GOOGLEPAY_MERCHANT_NAME', 'MagicPages');
+
+    if (!this.merchantVPA) {
+      this.logger.warn('GooglePay configuration missing (MERCHANT_VPA)');
+    }
   }
 
   getProviderName(): PaymentProvider {

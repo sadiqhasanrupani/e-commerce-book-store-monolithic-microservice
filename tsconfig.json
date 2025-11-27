@@ -20,7 +20,8 @@
     "types": [
       "node",
       "express",
-      "multer"
+      "multer",
+      "jest"
     ],
     "typeRoots": [
       "./src/types",

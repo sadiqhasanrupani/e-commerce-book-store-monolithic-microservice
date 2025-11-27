@@ -10,12 +10,9 @@
  * - Multi-currency support (future)
  */
 
-export enum PaymentProvider {
-    PHONEPE = 'phonepe',
-    GOOGLEPAY = 'googlepay',
-    PAYTM = 'paytm',
-    RAZORPAY = 'razorpay',
-}
+import { PaymentProvider } from '@app/contract/carts/enums/payment-provider.enum';
+
+export { PaymentProvider };
 
 export enum PaymentStatus {
     PENDING = 'PENDING',

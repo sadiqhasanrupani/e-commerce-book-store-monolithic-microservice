@@ -110,7 +110,8 @@
       "^@app/database(|/.*)$": "<rootDir>/libs/database/src/$1",
       "^@app/global-config(|/.*)$": "<rootDir>/libs/global-config/src/$1",
       "^@app/redis(|/.*)$": "<rootDir>/libs/redis/src/$1",
-      "^@rmq/rmq(|/.*)$": "<rootDir>/libs/rmq/src/$1"
+      "^@rmq/rmq(|/.*)$": "<rootDir>/libs/rmq/src/$1",
+      "^@app/contract(|/.*)$": "<rootDir>/libs/contract/src/$1"
     }
   }
 }
