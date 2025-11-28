@@ -75,4 +75,9 @@ export default Joi.object({
     then: Joi.required(),
     otherwise: Joi.optional(),
   }),
+  /**
+   * Redis Configuration
+   */
+  REDIS_HOST: Joi.string().required(),
+  REDIS_PORT: Joi.number().integer().min(1).max(65535).default(6379),
 });

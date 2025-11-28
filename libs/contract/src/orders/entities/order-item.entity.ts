@@ -1,7 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
 import { Order } from './order.entity';
 
-import { Product } from '@app/contract/products/entities/product.entity';
+import { BookFormatVariant } from '@app/contract/books/entities/book-format-varient.entity';
 
 @Entity('order_items')
 export class OrderItem {
@@ -11,8 +11,8 @@ export class OrderItem {
   @ManyToOne(() => Order, (order) => order.items, { onDelete: 'CASCADE' })
   order: Order;
 
-  @ManyToOne(() => Product)
-  product: Product;
+  @ManyToOne(() => BookFormatVariant)
+  bookFormatVariant: BookFormatVariant;
 
   @Column()
   quantity: number;

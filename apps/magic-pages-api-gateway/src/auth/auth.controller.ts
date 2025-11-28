@@ -13,7 +13,7 @@ import { VerifyTokenDto } from '@app/contract/auth/dtos/verify-token.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { } // eslint-disable-line
+  constructor(private readonly authService: AuthService) {} // eslint-disable-line
 
   @Auth(AuthTypes.NONE)
   @Role(RoleTypes.NONE)
@@ -33,17 +33,17 @@ export class AuthController {
   @Role(RoleTypes.NONE)
   @Post('verify-token')
   verifyToken(@Body() verifyTokenDto: VerifyTokenDto, @Res({ passthrough: true }) res: Response) {
-    res.cookie("access_token", "accessToken", {
+    res.cookie('access_token', 'accessToken', {
       httpOnly: true,
       secure: true,
-      sameSite: "none",
+      sameSite: 'none',
       maxAge: 1000 * 60 * 15, // 15 min
     });
 
-    res.cookie("refresh_token", "refreshToken", {
+    res.cookie('refresh_token', 'refreshToken', {
       httpOnly: true,
       secure: true,
-      sameSite: "none",
+      sameSite: 'none',
       maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
     });
   }

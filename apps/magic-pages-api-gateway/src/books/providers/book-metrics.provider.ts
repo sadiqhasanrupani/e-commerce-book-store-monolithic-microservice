@@ -19,7 +19,7 @@ export class BoookMetricsProvider {
   constructor(
     @InjectRepository(BookMetric)
     private readonly metricsRepository: Repository<BookMetric>,
-  ) { }
+  ) {}
 
   /**
    * Record an analytic event (view, purchase, wishlist, etc.)
@@ -34,9 +34,9 @@ export class BoookMetricsProvider {
     value?: number,
   ): Promise<void> {
     try {
-      let metric = await this.metricsRepository.findOne({ where: { id: bookId } });
+      let metric = await this.metricsRepository.findOne({ where: { bookId } });
       if (!metric) {
-        metric = this.metricsRepository.create({ id: bookId });
+        metric = this.metricsRepository.create({ bookId });
       }
 
       switch (event) {
@@ -75,7 +75,7 @@ export class BoookMetricsProvider {
   /**
    * Get aggregated metrics for a single book
    */
-  async getBookMetrics(bookId: number): Promise<BookMetrics> {
+  async getBookMetrics(bookId: string): Promise<BookMetric> {
     const metric = await this.metricsRepository.findOne({ where: { bookId } });
     if (!metric) {
       throw new BadRequestException(`No metrics found for bookId ${bookId}`);
@@ -89,7 +89,7 @@ export class BoookMetricsProvider {
    * Returns books ranked by engagement (views/purchases/downloads)
    * over a configurable time window and filter criteria.
    */
-  async getTopBooksByMetric(metric: keyof BookMetrics, options: MetricsFilterOptions = {}): Promise<BookMetrics[]> {
+  async getTopBooksByMetric(metric: keyof BookMetric, options: MetricsFilterOptions = {}): Promise<BookMetric[]> {
     const { startDate, endDate, genre, authorName, limit = 10 } = options;
 
     try {
@@ -112,11 +112,11 @@ export class BoookMetricsProvider {
           authorName: `%${authorName.toLowerCase()}%`,
         });
 
-      qb.orderBy(`metric.${metric}`, 'DESC').limit(limit);
+      qb.orderBy(`metric.${String(metric)}`, 'DESC').limit(limit);
 
       return await qb.getMany();
     } catch (err) {
-      this.logger.error(`Failed to fetch top books by ${metric}`, err.stack);
+      this.logger.error(`Failed to fetch top books by ${String(metric)}`, err.stack);
       throw new InternalServerErrorException('Failed to retrieve book metrics');
     }
   }
@@ -157,15 +157,15 @@ export class BoookMetricsProvider {
       .groupBy('metric.bookId')
       .getRawMany();
 
-    const growthMap = new Map<number, number>();
-    previousMetrics.forEach((m) => growthMap.set(Number(m.bookId), Number(m.previousTotal) || 0));
+    const growthMap = new Map<string, number>();
+    previousMetrics.forEach((m) => growthMap.set(m.bookId, Number(m.previousTotal) || 0));
 
     // compute growth %
     return currentMetrics
       .map((m) => {
-        const prev = growthMap.get(Number(m.bookId)) || 0;
+        const prev = growthMap.get(m.bookId) || 0;
         const growth = prev === 0 ? 100 : ((m.currentTotal - prev) / prev) * 100;
-        return { bookId: Number(m.bookId), growth: Number(growth.toFixed(2)) };
+        return { bookId: m.bookId, growth: Number(growth.toFixed(2)) };
       })
       .sort((a, b) => b.growth - a.growth)
       .slice(0, 10);

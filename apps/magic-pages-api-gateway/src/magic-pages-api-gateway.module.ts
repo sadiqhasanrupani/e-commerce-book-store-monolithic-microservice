@@ -20,6 +20,11 @@ import { AccessTokenGuard } from './auth/guards/access-token/access-token.guard'
 import { AuthorizationGuard } from './auth/guards/authorization/authorization.guard';
 import { RoleBaseAccessTokenGuard } from './auth/guards/role-base-access-token/role-base-access-token.guard';
 import { PaginationModule } from './common/pagination/pagination.module';
+import { CartModule } from './cart/cart.module';
+import { PrometheusModule } from '../../../libs/common/src/metrics';
+import { LoggerModule, RequestIdMiddleware, LoggingInterceptor } from '../../../libs/common/src/logging';
+import { MiddlewareConsumer, RequestMethod, NestModule } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -28,6 +33,8 @@ import { PaginationModule } from './common/pagination/pagination.module';
      */
     GlobalConfigModule,
     DatabaseModule,
+    PrometheusModule,
+    LoggerModule,
     /**
      * Feature modules
      */
@@ -36,6 +43,7 @@ import { PaginationModule } from './common/pagination/pagination.module';
     BooksModule,
     UploadModule,
     PaginationModule,
+    CartModule,
   ],
   providers: [
     {
@@ -48,6 +56,16 @@ import { PaginationModule } from './common/pagination/pagination.module';
       useClass: AuthorizationGuard,
     },
     RoleBaseAccessTokenGuard,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: LoggingInterceptor,
+    },
   ],
 })
-export class MagicPagesApiGatewayModule { } // eslint-disable-line
+export class MagicPagesApiGatewayModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(RequestIdMiddleware)
+      .forRoutes({ path: '*', method: RequestMethod.ALL });
+  }
+}

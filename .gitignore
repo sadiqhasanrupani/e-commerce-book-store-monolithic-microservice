@@ -66,3 +66,8 @@ postgres-data/
 .obsidianignore
 
 .vscode/*
+
+# Internal documentation (not for public)
+internal-docs/
+sprint-reports/
+redis-data/

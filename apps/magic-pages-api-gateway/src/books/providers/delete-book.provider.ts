@@ -1,10 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, HttpException, HttpStatus } from '@nestjs/common';
 import { DataSource, QueryRunner } from 'typeorm';
 
 import { UploadBookFilesProvider } from './upload-book-files.provider';
@@ -25,7 +19,7 @@ export class DeleteBookProvider {
   constructor(
     private readonly upload: UploadBookFilesProvider,
     private readonly dataSource: DataSource,
-  ) { }
+  ) {}
 
   /* -------------------------------------------------------------------------- */
   /*                              UTILITY HELPERS                               */
@@ -71,10 +65,7 @@ export class DeleteBookProvider {
   /*                         STORAGE-SAFE ARCHIVE OPERATION                      */
   /* -------------------------------------------------------------------------- */
 
-  private async archiveStorageObjectsOrFail(
-    keys: string[],
-    archivePrefix: string,
-  ): Promise<string[]> {
+  private async archiveStorageObjectsOrFail(keys: string[], archivePrefix: string): Promise<string[]> {
     if (keys.length === 0) return [];
 
     this.logger.log(`Archiving ${keys.length} files → prefix(${archivePrefix})`);
@@ -83,10 +74,7 @@ export class DeleteBookProvider {
       return await this.upload.moveObjects(keys, archivePrefix);
     } catch (err) {
       this.logger.error('Storage archive failed', err);
-      throw new HttpException(
-        'Failed to archive book files',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to archive book files', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -99,10 +87,7 @@ export class DeleteBookProvider {
       await this.upload.deleteObjects(keys);
     } catch (err) {
       this.logger.error('Storage delete failed', err);
-      throw new HttpException(
-        'Failed to delete book files',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Failed to delete book files', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -110,10 +95,7 @@ export class DeleteBookProvider {
   /*                         DATABASE UPDATE OPERATIONS                          */
   /* -------------------------------------------------------------------------- */
 
-  private async markBookArchived(
-    queryRunner: QueryRunner,
-    id: string,
-  ): Promise<void> {
+  private async markBookArchived(queryRunner: QueryRunner, id: string): Promise<void> {
     await queryRunner.manager.update(
       Book,
       { id },
@@ -125,10 +107,7 @@ export class DeleteBookProvider {
     );
   }
 
-  private async deleteBookRecord(
-    queryRunner: QueryRunner,
-    id: string,
-  ): Promise<void> {
+  private async deleteBookRecord(queryRunner: QueryRunner, id: string): Promise<void> {
     await queryRunner.manager.delete(Book, { id });
   }
 

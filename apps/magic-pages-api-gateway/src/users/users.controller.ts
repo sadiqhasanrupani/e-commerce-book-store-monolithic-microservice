@@ -10,7 +10,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly hashingProvider: HashingProvider,
-  ) { } //eslint-disable-line
+  ) {} //eslint-disable-line
 
   @Post()
   async create(@Body() createUserDto: CreateUserDto) {

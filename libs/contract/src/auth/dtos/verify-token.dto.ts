@@ -1,4 +1,4 @@
-import { IsEmail, IsString, Max, Min } from "class-validator";
+import { IsEmail, IsString, Max, Min } from 'class-validator';
 
 export class VerifyTokenDto {
   @IsEmail()

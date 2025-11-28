@@ -19,7 +19,7 @@ export class CreateUserProvider {
      * Inject findUserProvider
      * */
     private readonly findUserProvider: FindUserProvider,
-  ) { } // eslint-disable-line
+  ) {} // eslint-disable-line
 
   async createUser(input: CreateUserInput): Promise<User> {
     const existing = await this.findUserProvider.findByEmail(input.email);

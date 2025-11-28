@@ -36,13 +36,7 @@ import { STORAGE_CONFIG } from '@app/contract/storage/configs/storage.config';
     PaginationModule,
   ],
   controllers: [BooksController],
-  providers: [
-    BooksService,
-    CreateBookProvider,
-    UploadBookFilesProvider,
-    DeleteBookProvider,
-    FindBookProvider,
-  ],
+  providers: [BooksService, CreateBookProvider, UploadBookFilesProvider, DeleteBookProvider, FindBookProvider],
   exports: [BooksService, TypeOrmModule],
 })
-export class BooksModule { }
+export class BooksModule {}

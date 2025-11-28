@@ -1,7 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn } from 'typeorm';
 import { Order } from './order.entity';
-
-import { PaymentStatus, FulfillmentStatus } from './order.entity';
+import { PaymentStatus, FulfillmentStatus } from '../enums/order-status.enum';
 import { User } from '@app/contract/users/entities/user.entity';
 
 @Entity('order_status_logs')

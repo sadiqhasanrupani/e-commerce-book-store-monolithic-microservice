@@ -12,4 +12,4 @@ import { UploadToStorageProvider } from './providers/upload-to-storage.provider'
   controllers: [StorageController],
   providers: [StorageService, UploadToStorageProvider],
 })
-export class StorageModule { } //eslint-disable-line
+export class StorageModule {} //eslint-disable-line

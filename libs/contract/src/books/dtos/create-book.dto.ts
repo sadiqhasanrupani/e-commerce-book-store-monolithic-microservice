@@ -1,13 +1,4 @@
-import {
-  IsEnum,
-  IsString,
-  MaxLength,
-  IsOptional,
-  IsArray,
-  IsBoolean,
-  ValidateNested,
-  IsUUID,
-} from 'class-validator';
+import { IsEnum, IsString, MaxLength, IsOptional, IsArray, IsBoolean, ValidateNested, IsUUID } from 'class-validator';
 import { Type } from 'class-transformer';
 import { BookGenre } from '../enums/book-genres.enum';
 import { CreateAuthorDto } from '../../author/dtos/create-author.dto';

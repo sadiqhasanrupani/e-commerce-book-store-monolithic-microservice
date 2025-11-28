@@ -7,4 +7,4 @@ import typeOrmOptions from '../configs/typeorm.config';
   imports: [TypeOrmModule.forRootAsync(typeOrmOptions)],
   exports: [TypeOrmModule],
 })
-export class DatabaseModule { } //eslint-disable-line
+export class DatabaseModule {} //eslint-disable-line
