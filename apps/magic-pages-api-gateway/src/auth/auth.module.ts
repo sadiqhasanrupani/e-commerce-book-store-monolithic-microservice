@@ -19,13 +19,14 @@ import { EmailConsumer } from './consumers/email.consumer';
 import { RmqModule } from '@rmq/rmq';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EmailVerification } from '@app/contract/auth/entities/email-verification.entity';
+import { User } from '@app/contract/users/entities/user.entity';
 
 @Module({
   imports: [
     forwardRef(() => UsersModule),
     GlobalConfigModule,
     RmqModule.registerAsync(),
-    TypeOrmModule.forFeature([EmailVerification]),
+    TypeOrmModule.forFeature([EmailVerification, User]),
   ],
   controllers: [AuthController, EmailConsumer],
   providers: [

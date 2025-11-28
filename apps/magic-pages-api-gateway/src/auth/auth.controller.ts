@@ -12,6 +12,9 @@ import { Auth } from './decorator/auth.decorator';
 import { AuthTypes } from '@app/contract/auth/enums/auth-types.enum';
 import { VerifyTokenDto } from '@app/contract/auth/dtos/verify-token.dto';
 import { VerifyOtpDto } from '@app/contract/auth/dtos/verify-otp.dto';
+import { RegisterDto } from '@app/contract/auth/dtos/register.dto';
+import { RequestLoginOtpDto } from '@app/contract/auth/dtos/request-login-otp.dto';
+import { VerifyLoginOtpDto } from '@app/contract/auth/dtos/verify-login-otp.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -24,8 +27,8 @@ export class AuthController {
   @ApiResponse({ status: 201, description: 'User registered successfully.' })
   @ApiResponse({ status: 409, description: 'User already exists.' })
   @Post('register')
-  register(@Body() registerAuthDto: RegisterAuthDto) {
-    return this.authService.register(registerAuthDto);
+  register(@Body() registerDto: RegisterDto) {
+    return this.authService.register(registerDto);
   }
 
   @Auth(AuthTypes.NONE)
@@ -65,5 +68,25 @@ export class AuthController {
       sameSite: 'none',
       maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
     });
+  }
+
+  @Auth(AuthTypes.NONE)
+  @Role(RoleTypes.NONE)
+  @ApiOperation({ summary: 'Request OTP for passwordless login' })
+  @ApiResponse({ status: 200, description: 'OTP sent to email successfully.' })
+  @ApiResponse({ status: 401, description: 'User not found or not verified.' })
+  @Post('sign-in/otp/request')
+  requestLoginOtp(@Body() dto: RequestLoginOtpDto) {
+    return this.authService.requestLoginOtp(dto.email);
+  }
+
+  @Auth(AuthTypes.NONE)
+  @Role(RoleTypes.NONE)
+  @ApiOperation({ summary: 'Verify OTP and login (passwordless)' })
+  @ApiResponse({ status: 200, description: 'User authenticated and token issued.' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired OTP.' })
+  @Post('sign-in/otp/verify')
+  verifyLoginOtp(@Body() dto: VerifyLoginOtpDto) {
+    return this.authService.verifyLoginOtp(dto.email, dto.otp);
   }
 }

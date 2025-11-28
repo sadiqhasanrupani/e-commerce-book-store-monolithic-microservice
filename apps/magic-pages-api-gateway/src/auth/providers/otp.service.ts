@@ -12,6 +12,8 @@ export class OtpService {
   constructor(
     @InjectRepository(EmailVerification)
     private readonly emailVerificationRepository: Repository<EmailVerification>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) { }
 
   async generateAndSaveOtp(user: User, purpose: string): Promise<string> {
@@ -32,9 +34,23 @@ export class OtpService {
     return otp;
   }
 
-  async verifyOtp(userId: number, otp: string, purpose: string): Promise<boolean> {
+  /**
+   * Verify OTP by email and purpose
+   * @param email - User's email address
+   * @param otp - OTP code to verify
+   * @param purpose - Purpose of OTP (REGISTRATION or LOGIN)
+   * @returns boolean - true if OTP is valid, false otherwise
+   */
+  async verifyOtp(email: string, otp: string, purpose: string): Promise<boolean> {
+    // Find user by email
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) {
+      return false;
+    }
+
+    // Find the most recent unused OTP for this user and purpose
     const verification = await this.emailVerificationRepository.findOne({
-      where: { userId, purpose, used: false },
+      where: { userId: user.id, purpose, used: false },
       order: { createdAt: 'DESC' },
     });
 
@@ -42,10 +58,12 @@ export class OtpService {
       return false;
     }
 
+    // Check if OTP has expired
     if (verification.expiresAt < new Date()) {
       return false;
     }
 
+    // Verify OTP hash
     const isValid = await bcrypt.compare(otp, verification.tokenHash);
     if (!isValid) {
       verification.attempts += 1;
@@ -53,6 +71,7 @@ export class OtpService {
       return false;
     }
 
+    // Mark OTP as used
     verification.used = true;
     await this.emailVerificationRepository.save(verification);
     return true;

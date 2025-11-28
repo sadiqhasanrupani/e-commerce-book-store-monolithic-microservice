@@ -16,6 +16,17 @@ async function bootstrap() {
 
   app.useLogger(app.get(LoggerService));
 
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      }
+    }),
+  );
+
   // Connect to RabbitMQ as a microservice for event consumers
   const configService = app.get(ConfigService);
   const rabbitmqUrl = configService.get<string>('rabbitmq.url');

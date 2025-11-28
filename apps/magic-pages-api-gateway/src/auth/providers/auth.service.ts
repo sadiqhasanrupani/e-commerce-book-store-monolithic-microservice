@@ -16,6 +16,7 @@ import { OtpService } from './otp.service';
 import { RABBITMQ_CLIENT } from '@rmq/rmq/constants/rmq.constant';
 import { ClientProxy } from '@nestjs/microservices';
 import { lastValueFrom } from 'rxjs';
+import { RegisterDto } from '@app/contract/auth/dtos/register.dto';
 
 /**
  * @class AuthService
@@ -104,10 +105,26 @@ export class AuthService {
    * @throws {BadRequestException} if password is invalid
    * @returns {Promise<AuthResult>} - JWT access token and user details
    */
-  async register(registerDto: RegisterAuthDto): Promise<{ message: string; userId: number; email: string }> {
+  async register(registerDto: RegisterDto): Promise<{ message: string; userId: number; email: string }> {
     try {
-      const { email, password, firstName, lastName, role } = registerDto;
+      // 1. Destructure fullName and role (if it exists on DTO)
+      const { email, password, fullName } = registerDto;
+
       console.log('[AuthService] Starting registration for:', email);
+
+      // --- NAME SPLITTING LOGIC ---
+      // Split by one or more spaces to handle accidental double spaces
+      const nameParts = fullName.trim().split(/\s+/);
+
+      // First name is always the first part
+      const firstName = nameParts[0];
+
+      // Last name is the last part (if more than 1 part exists)
+      const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+
+      // Middle name is everything between the first and last index (if more than 2 parts exist)
+      const middleName = nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : '';
+      // ----------------------------
 
       // Check for existing user
       const existingUser = await this.usersService.findByEmail(email);
@@ -116,42 +133,40 @@ export class AuthService {
       }
       console.log('[AuthService] User does not exist, proceeding...');
 
-      // Validate and hash password
+      // Validate and hash password (Optional: DTO usually handles validation, but this is a safe double-check)
       if (typeof password !== 'string' || password.trim().length < 6) {
         throw new BadRequestException('Password must be at least 6 characters long');
       }
 
       console.log('[AuthService] Hashing password...');
       const passwordHash = await this.hashingProvider.hashPassword(password);
-      console.log('[AuthService] Password hashed successfully');
 
       // Create user record in DB
       console.log('[AuthService] Creating user in database...');
       const newUser = await this.usersService.create({
         email,
         passwordHash,
-        firstName: firstName?.trim(),
-        lastName: lastName?.trim(),
-        role: role ?? Roles.BUYER,
+        firstName,
+        lastName,
+        middleName,
+        role: Roles.BUYER,
       });
+
       console.log('[AuthService] User created with ID:', newUser.id);
 
       // Generate OTP
       console.log('[AuthService] Generating OTP...');
       const otp = await this.otpService.generateAndSaveOtp(newUser, 'REGISTRATION');
-      console.log('[AuthService] OTP generated:', otp);
 
-      // Publish event (fire-and-forget)
+      // Publish event
       console.log('[AuthService] Emitting email verification event...');
       this.rmqClient.emit('email_verification.requested', {
         userId: newUser.id,
         email: newUser.email,
         otp,
-        name: newUser.firstName,
+        name: newUser.firstName, // Or use 'fullName' if you prefer addressing them by full name
       });
-      console.log('[AuthService] Event emitted successfully');
 
-      // Return registration response
       return {
         message: 'User registered successfully. Please check your email for verification code.',
         userId: newUser.id,
@@ -170,15 +185,12 @@ export class AuthService {
       throw new BadRequestException('Invalid email or OTP');
     }
 
-    const isValid = await this.otpService.verifyOtp(user.id, otp, 'REGISTRATION');
+    const isValid = await this.otpService.verifyOtp(user.email, otp, 'REGISTRATION');
     if (!isValid) {
       throw new BadRequestException('Invalid email or OTP');
     }
 
-    // Activate user (assuming UsersService has activateUser, if not I'll need to add it or just ignore for now)
-    // The previous deleted code used activateUser.
-    // I'll assume it exists or I'll check UsersService.
-    // For now I'll just generate token.
+    await this.usersService.activateUser(user.id);
 
     return this.signIn({
       userId: user.id,
@@ -250,4 +262,77 @@ export class AuthService {
   //   const result = await this.redisService.get(`blacklist:${token}`);
   //   return !!result;
   // }
+
+  /**
+   * Request OTP for passwordless login
+   * Sends OTP to user's email for authentication
+   */
+  async requestLoginOtp(email: string): Promise<{ message: string; email: string }> {
+    // Check if user exists and is verified
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Please verify your email first');
+    }
+
+    // Generate OTP for LOGIN
+    const otp = await this.otpService.generateAndSaveOtp(user, 'LOGIN');
+
+    // Emit email event
+    this.rmqClient.emit('email_verification.requested', {
+      userId: user.id,
+      email: user.email,
+      otp,
+      name: user.firstName,
+    });
+
+    return {
+      message: 'OTP sent to your email. Please check your inbox.',
+      email: user.email,
+    };
+  }
+
+  /**
+   * Verify OTP and login (passwordless)
+   * Returns JWT token upon successful OTP verification
+   */
+  async verifyLoginOtp(email: string, otp: string): Promise<AuthResult> {
+    // Verify OTP
+    const isValid = await this.otpService.verifyOtp(email, otp, 'LOGIN');
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid or expired OTP');
+    }
+
+    // Get user
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    // Generate JWT token
+    const accessToken = await this.jwtService.signAsync(
+      {
+        sub: user.id,
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      },
+      {
+        audience: this.jwtConfiguration.audience,
+        issuer: this.jwtConfiguration.issuer,
+        secret: this.jwtConfiguration.secret,
+        expiresIn: this.jwtConfiguration.accessTokenTtl,
+      },
+    );
+
+    return {
+      accessToken,
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    };
+  }
 }

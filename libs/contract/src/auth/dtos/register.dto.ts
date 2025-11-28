@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, IsNotEmpty } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsNotEmpty, Matches } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class RegisterDto {
@@ -11,9 +11,13 @@ export class RegisterDto {
   @MinLength(8, { message: 'Password must be at least 8 characters' })
   password: string;
 
-  @IsString()
   @IsNotEmpty()
-  @MinLength(1)
-  @Transform(({ value }: { value: string }) => value.trim())
+  @IsString()
+  // 1. Matches letters (a-z, A-Z) and spaces only.
+  // 2. Allows single words (e.g., "John") or multiple words (e.g., "John Doe").
+  @Matches(/^[a-zA-Z\s]+$/, {
+    message: 'Full name must contain only letters and spaces',
+  })
+  @MinLength(2, { message: 'Full name must be at least 2 characters long' })
   fullName: string;
 }
