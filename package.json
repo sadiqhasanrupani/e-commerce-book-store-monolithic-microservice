@@ -68,7 +68,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "typeorm": "^0.3.26",
-    "uuid": "^13.0.0",
+    "uuid": "^9.0.1",
     "winston": "^3.18.3"
   },
   "devDependencies": {
@@ -87,6 +87,7 @@
     "@types/nodemailer": "^7.0.1",
     "@types/passport-local": "^1.0.38",
     "@types/supertest": "^6.0.2",
+    "@types/uuid": "9.0.8",
     "dotenv": "^17.2.3",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

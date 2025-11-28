@@ -1,11 +1,4 @@
-import {
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { BookFormat } from '../enums/book-format.enum';
 
 export class CreateBookVariantDto {

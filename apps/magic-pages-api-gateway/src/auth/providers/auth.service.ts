@@ -33,7 +33,7 @@ export class AuthService {
 
     @Inject(jwtConfig.KEY)
     private readonly jwtConfiguration: ConfigType<typeof jwtConfig>,
-  ) { } // eslint-disable-line
+  ) {} // eslint-disable-line
 
   /**
    * @method authenticate

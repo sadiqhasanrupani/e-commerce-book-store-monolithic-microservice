@@ -11,7 +11,7 @@ export class FindUserProvider {
      * */
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-  ) { } //eslint-disable-line
+  ) {} //eslint-disable-line
 
   async findByEmail(email: string): Promise<User | null> {
     try {

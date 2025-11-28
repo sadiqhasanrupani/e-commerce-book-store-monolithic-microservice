@@ -25,7 +25,7 @@ export class UploadBookFilesProvider {
      * */
     @Inject(STORAGE_CONFIG.CLIENTS.name)
     private readonly storageClient: ClientProxy,
-  ) { } //eslint-disable-line
+  ) {} //eslint-disable-line
 
   /**
    * Upload multiple pdf file (from multer).

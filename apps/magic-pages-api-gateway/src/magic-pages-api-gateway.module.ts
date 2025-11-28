@@ -50,18 +50,12 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
       provide: APP_GUARD,
       useClass: AuthenticationGuard,
     },
-    {
-      provide: APP_GUARD,
-      useClass: AccessTokenGuard,
-    },
+    AccessTokenGuard,
     {
       provide: APP_GUARD,
       useClass: AuthorizationGuard,
     },
-    {
-      provide: APP_GUARD,
-      useClass: RoleBaseAccessTokenGuard,
-    },
+    RoleBaseAccessTokenGuard,
     {
       provide: APP_INTERCEPTOR,
       useClass: LoggingInterceptor,

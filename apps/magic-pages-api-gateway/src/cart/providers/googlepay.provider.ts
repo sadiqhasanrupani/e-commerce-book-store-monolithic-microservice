@@ -14,14 +14,14 @@ import {
 
 /**
  * Google Pay UPI Payment Provider
- * 
+ *
  * Integration Guide: https://developers.google.com/pay/india/api/web/googlepay-business
- * 
+ *
  * Features:
  * - UPI Intent (opens Google Pay app)
  * - Deep linking
  * - Transaction status API
- * 
+ *
  * Note: Google Pay uses UPI deep links, not a traditional payment gateway API
  * Actual payment processing happens through UPI rails
  */
@@ -68,10 +68,7 @@ export class GooglePayProvider implements IPaymentProvider {
     return response;
   }
 
-  async verifyWebhook(
-    headers: Record<string, string>,
-    body: any,
-  ): Promise<WebhookVerificationResult> {
+  async verifyWebhook(headers: Record<string, string>, body: any): Promise<WebhookVerificationResult> {
     // Google Pay doesn't have direct webhooks
     // Payment confirmation comes through UPI system
     // You would typically poll the payment status or use a payment aggregator

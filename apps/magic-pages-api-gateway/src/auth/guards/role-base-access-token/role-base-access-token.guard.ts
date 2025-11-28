@@ -9,7 +9,7 @@ import { AuthenticatedRequest } from '@app/contract/auth/interfaces/authenticate
 @Injectable()
 export class RoleBaseAccessTokenGuard implements CanActivate {
   private static readonly defaultRoleType = RoleTypes.NONE;
-  constructor(private readonly reflector: Reflector) { } // eslint-disable-line
+  constructor(private readonly reflector: Reflector) {} // eslint-disable-line
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();

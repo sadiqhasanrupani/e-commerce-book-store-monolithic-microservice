@@ -35,4 +35,4 @@ import { Argon2Provider } from './providers/argon2.provider';
   ],
   exports: [AuthService, HashingProvider],
 })
-export class AuthModule { } // eslint-disable-line
+export class AuthModule {} // eslint-disable-line

@@ -1,12 +1,12 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, Index } from "typeorm";
-import { Book } from "./book.entity";
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, Index } from 'typeorm';
+import { Book } from './book.entity';
 
-@Entity("book_metrics")
+@Entity('book_metrics')
 export class BookMetric {
-  @PrimaryGeneratedColumn("uuid")
+  @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Book, book => book.metrics, { onDelete: "CASCADE" })
+  @ManyToOne(() => Book, (book) => book.metrics, { onDelete: 'CASCADE' })
   book: Book;
 
   @Column({ name: 'book_id', type: 'uuid' })

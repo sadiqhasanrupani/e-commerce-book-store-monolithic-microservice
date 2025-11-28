@@ -27,7 +27,7 @@ export function extractStorageKeyFromUrl(url?: string | null): string | null {
 
     // Normalize path
     let key = u.pathname.replace(/^\/+/, ''); // remove leading "/"
-    key = key.replace(/\/+$/, '');            // remove trailing "/"
+    key = key.replace(/\/+$/, ''); // remove trailing "/"
 
     if (!key) return null;
 

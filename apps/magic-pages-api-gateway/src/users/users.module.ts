@@ -21,4 +21,4 @@ import { User } from '@app/contract/users/entities/user.entity';
   providers: [UsersService, CreateUserProvider, UpdateUserProvider, FindUserProvider, RemoveUserProvider],
   exports: [TypeOrmModule, UsersService],
 })
-export class UsersModule { } //eslint-disable-line
+export class UsersModule {} //eslint-disable-line

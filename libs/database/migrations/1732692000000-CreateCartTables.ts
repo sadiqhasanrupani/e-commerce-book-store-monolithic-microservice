@@ -1,11 +1,11 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class CreateCartTables1732692000000 implements MigrationInterface {
-    name = 'CreateCartTables1732692000000';
+  name = 'CreateCartTables1732692000000';
 
-    public async up(queryRunner: QueryRunner): Promise<void> {
-        // Create carts table
-        await queryRunner.query(`
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    // Create carts table
+    await queryRunner.query(`
       CREATE TABLE carts (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id integer NOT NULL,
@@ -16,13 +16,13 @@ export class CreateCartTables1732692000000 implements MigrationInterface {
       )
     `);
 
-        // Create index on user_id
-        await queryRunner.query(`
+    // Create index on user_id
+    await queryRunner.query(`
       CREATE INDEX idx_carts_user ON carts(user_id)
     `);
 
-        // Create cart_items table
-        await queryRunner.query(`
+    // Create cart_items table
+    await queryRunner.query(`
       CREATE TABLE cart_items (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         cart_id uuid NOT NULL,
@@ -39,14 +39,14 @@ export class CreateCartTables1732692000000 implements MigrationInterface {
       )
     `);
 
-        // Create index on cart_id
-        await queryRunner.query(`
+    // Create index on cart_id
+    await queryRunner.query(`
       CREATE INDEX idx_cart_items_cart ON cart_items(cart_id)
     `);
-    }
+  }
 
-    public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`DROP TABLE IF EXISTS cart_items CASCADE`);
-        await queryRunner.query(`DROP TABLE IF EXISTS carts CASCADE`);
-    }
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE IF EXISTS cart_items CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS carts CASCADE`);
+  }
 }

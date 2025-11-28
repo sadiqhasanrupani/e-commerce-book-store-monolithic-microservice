@@ -27,7 +27,7 @@ export class ReservationWorkerService implements ICartCleanupStrategy {
     @InjectRepository(BookFormatVariant)
     private readonly variantRepository: Repository<BookFormatVariant>,
     private readonly dataSource: DataSource,
-  ) { }
+  ) {}
 
   /**
    * Process completed and abandoned carts
@@ -62,10 +62,7 @@ export class ReservationWorkerService implements ICartCleanupStrategy {
 
         try {
           // Calculate totals for history
-          const totalAmount = cart.items.reduce(
-            (sum, item) => sum + Number(item.unitPrice) * item.qty,
-            0,
-          );
+          const totalAmount = cart.items.reduce((sum, item) => sum + Number(item.unitPrice) * item.qty, 0);
 
           // Archive cart to cart_history
           await queryRunner.manager.query(
@@ -100,9 +97,7 @@ export class ReservationWorkerService implements ICartCleanupStrategy {
                   { reservedQuantity: () => `reserved_quantity - ${item.qty}` },
                 );
                 releasedCount++;
-                this.logger.log(
-                  `Released ${item.qty} units of variant ${variant.id} from abandoned cart ${cart.id}`,
-                );
+                this.logger.log(`Released ${item.qty} units of variant ${variant.id} from abandoned cart ${cart.id}`);
               }
             }
           }
@@ -123,9 +118,7 @@ export class ReservationWorkerService implements ICartCleanupStrategy {
         }
       }
 
-      this.logger.log(
-        `Cart cleanup completed. Archived: ${archivedCount}, Reservations released: ${releasedCount}`,
-      );
+      this.logger.log(`Cart cleanup completed. Archived: ${archivedCount}, Reservations released: ${releasedCount}`);
     } catch (error) {
       this.logger.error('Error during cart cleanup', error);
     }

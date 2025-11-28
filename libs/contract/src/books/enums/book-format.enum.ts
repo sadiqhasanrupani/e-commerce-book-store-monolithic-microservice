@@ -17,10 +17,5 @@ export enum BookFormat {
  * Helper function to check if a format is physical
  */
 export function isPhysicalFormat(format: BookFormat): boolean {
-  return [
-    BookFormat.HARDCOVER,
-    BookFormat.PAPERBACK,
-    BookFormat.PHYSICAL,
-  ].includes(format);
+  return [BookFormat.HARDCOVER, BookFormat.PAPERBACK, BookFormat.PHYSICAL].includes(format);
 }
-

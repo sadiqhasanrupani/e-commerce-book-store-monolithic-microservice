@@ -32,7 +32,7 @@ export class CartController {
   constructor(
     private readonly cartService: CartService,
     private readonly checkoutService: CheckoutService,
-  ) { }
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Get current user cart' })

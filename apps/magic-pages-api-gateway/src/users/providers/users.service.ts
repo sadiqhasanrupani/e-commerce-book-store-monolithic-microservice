@@ -18,7 +18,7 @@ export class UsersService {
      * Inject findUserProvider
      * */
     private readonly findUserProvider: FindUserProvider,
-  ) { } //eslint-disable-line
+  ) {} //eslint-disable-line
 
   async create(createUserInput: CreateUserInput): Promise<User> {
     return this.createUserProvider.createUser(createUserInput);
@@ -28,11 +28,11 @@ export class UsersService {
     return await this.findUserProvider.findByEmail(email);
   }
 
-  findAll() { } //eslint-disable-line
+  findAll() {} //eslint-disable-line
 
-  findOne(id: number) { } //eslint-disable-line
+  findOne(id: number) {} //eslint-disable-line
 
-  update(id: number, updateUserDto: UpdateUserDto) { } //eslint-disable-line
+  update(id: number, updateUserDto: UpdateUserDto) {} //eslint-disable-line
 
-  remove(id: number) { } //eslint-disable-line
+  remove(id: number) {} //eslint-disable-line
 }

@@ -14,7 +14,7 @@ export class AccessTokenGuard implements CanActivate {
 
     @Inject(jwtConfig.KEY)
     private readonly jwtConfiguration: ConfigType<typeof jwtConfig>,
-  ) { } // eslint-disable-line
+  ) {} // eslint-disable-line
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Extract the request from the context

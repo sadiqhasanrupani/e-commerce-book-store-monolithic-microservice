@@ -26,4 +26,4 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
   ],
   exports: [JwtModule, ConfigModule],
 })
-export class GlobalConfigModule { } // eslint-disable-line
+export class GlobalConfigModule {} // eslint-disable-line

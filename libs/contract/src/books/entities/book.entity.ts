@@ -1,21 +1,28 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, ManyToOne,
-  CreateDateColumn, UpdateDateColumn, OneToMany,
-  ManyToMany, JoinTable, Index
-} from "typeorm";
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  CreateDateColumn,
+  UpdateDateColumn,
+  OneToMany,
+  ManyToMany,
+  JoinTable,
+  Index,
+} from 'typeorm';
 
-import { Author } from "@app/contract/author/entities/author.entity";
-import { Tag } from "./tags.entity";
-import { BookFormatVariant } from "./book-format-varient.entity";
-import { Category } from "./categories.entity";
-import { BookMetric } from "./book-metrics.entity";
+import { Author } from '@app/contract/author/entities/author.entity';
+import { Tag } from './tags.entity';
+import { BookFormatVariant } from './book-format-varient.entity';
+import { Category } from './categories.entity';
+import { BookMetric } from './book-metrics.entity';
 
-@Entity("books")
-@Index("idx_books_title", ["title"], { unique: true })
-@Index("idx_books_slug", ["slug"])
-@Index("idx_books_age_group", ["ageGroup"])
+@Entity('books')
+@Index('idx_books_title', ['title'], { unique: true })
+@Index('idx_books_slug', ['slug'])
+@Index('idx_books_age_group', ['ageGroup'])
 export class Book {
-  @PrimaryGeneratedColumn("uuid")
+  @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ length: 255 })
@@ -24,16 +31,16 @@ export class Book {
   @Column({ length: 255, nullable: true })
   subtitle?: string;
 
-  @Column({ type: "text", nullable: true })
+  @Column({ type: 'text', nullable: true })
   description?: string;
 
   @Column({ length: 80, nullable: true })
   genre?: string;
 
-  @ManyToOne(() => Author, author => author.books, { nullable: true, onDelete: "SET NULL" })
+  @ManyToOne(() => Author, (author) => author.books, { nullable: true, onDelete: 'SET NULL' })
   author?: Author;
 
-  @Column({ type: "uuid", nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   authorId?: string;
 
   @Column({ length: 100, nullable: true })
@@ -42,7 +49,7 @@ export class Book {
   @Column({ length: 255, nullable: true })
   coverImageUrl?: string;
 
-  @Column({ type: "text", array: true, nullable: true })
+  @Column({ type: 'text', array: true, nullable: true })
   snapshotUrls?: string[];
 
   @Column({ length: 200, nullable: true })
@@ -69,7 +76,7 @@ export class Book {
   @Column({ default: true })
   allowWishlist: boolean;
 
-  @Column({ length: 10, default: "public" })
+  @Column({ length: 10, default: 'public' })
   visibility: string;
 
   @Column({ length: 24, nullable: true })
@@ -78,13 +85,13 @@ export class Book {
   @Column({ default: false })
   isArchived: boolean;
 
-  @Column({ type: "timestamptz", nullable: true })
+  @Column({ type: 'timestamptz', nullable: true })
   archivedAt?: Date;
 
-  @Column({ type: "timestamptz", nullable: true })
+  @Column({ type: 'timestamptz', nullable: true })
   deletedAt?: Date;
 
-  @Column({ type: "tsvector", nullable: true })
+  @Column({ type: 'tsvector', nullable: true })
   tsv?: string;
 
   @CreateDateColumn()
@@ -93,17 +100,17 @@ export class Book {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @OneToMany(() => BookFormatVariant, variant => variant.book)
+  @OneToMany(() => BookFormatVariant, (variant) => variant.book)
   formats: BookFormatVariant[];
 
   @ManyToMany(() => Category)
-  @JoinTable({ name: "book_categories" })
+  @JoinTable({ name: 'book_categories' })
   categories: Category[];
 
   @ManyToMany(() => Tag)
-  @JoinTable({ name: "book_tags" })
+  @JoinTable({ name: 'book_tags' })
   tags: Tag[];
 
-  @OneToMany(() => BookMetric, metric => metric.book)
+  @OneToMany(() => BookMetric, (metric) => metric.book)
   metrics: BookMetric[];
 }

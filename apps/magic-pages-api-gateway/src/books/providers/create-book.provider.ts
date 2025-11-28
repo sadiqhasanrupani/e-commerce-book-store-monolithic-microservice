@@ -2,7 +2,7 @@ import { Injectable, ConflictException, BadRequestException, Logger, HttpExcepti
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 
-import { extractStorageKeyFromUrl } from '@app/contract/books/utils/books.util'
+import { extractStorageKeyFromUrl } from '@app/contract/books/utils/books.util';
 
 // DTOs
 import { CreateBookDto } from '@app/contract/books/dtos/create-book.dto';
@@ -24,8 +24,8 @@ export class CreateBookProvider {
 
     private readonly findBookProvider: FindBookProvider,
     private readonly uploadBookFilesProvider: UploadBookFilesProvider,
-    private readonly dataSource: DataSource
-  ) { }
+    private readonly dataSource: DataSource,
+  ) {}
 
   /**
    * Create book with DB-level protection against race conditions.
@@ -47,7 +47,6 @@ export class CreateBookProvider {
   //     );
   //   }
   // }
-
 
   /**
    * Bulk create books (atomic) — optimized, safe, low complexity.
@@ -83,8 +82,8 @@ export class CreateBookProvider {
     }
 
     // Extract titles and validate at once
-    const titles = inputs.map(i => (i.createBookDto.title || '').trim());
-    if (titles.some(t => !t)) {
+    const titles = inputs.map((i) => (i.createBookDto.title || '').trim());
+    if (titles.some((t) => !t)) {
       throw new BadRequestException('Each book must have a non-empty title');
     }
 
@@ -136,11 +135,13 @@ export class CreateBookProvider {
 
       // 1) cover image (single)
       if (files?.bookCover) {
-        const payload = [{
-          buffer: files.bookCover.buffer,
-          filename: files.bookCover.originalname,
-          mimetype: files.bookCover.mimetype,
-        }];
+        const payload = [
+          {
+            buffer: files.bookCover.buffer,
+            filename: files.bookCover.originalname,
+            mimetype: files.bookCover.mimetype,
+          },
+        ];
         const [url] = await this.uploadBookFilesProvider.uploadBuffers(payload);
         coverUrl = url;
         const k = extractKey(url);
@@ -149,7 +150,7 @@ export class CreateBookProvider {
 
       // 2) snapshots (batch)
       if (files?.snapshots?.length) {
-        const payload = files.snapshots.map(f => ({
+        const payload = files.snapshots.map((f) => ({
           buffer: f.buffer,
           filename: f.originalname,
           mimetype: f.mimetype,
@@ -175,11 +176,13 @@ export class CreateBookProvider {
         } else {
           for (let i = 0; i < Math.min(variantFiles.length, variantFileUrls.length); i++) {
             const f = variantFiles[i];
-            const [url] = await this.uploadBookFilesProvider.uploadBuffers([{
-              buffer: f.buffer,
-              filename: f.originalname,
-              mimetype: f.mimetype,
-            }]);
+            const [url] = await this.uploadBookFilesProvider.uploadBuffers([
+              {
+                buffer: f.buffer,
+                filename: f.originalname,
+                mimetype: f.mimetype,
+              },
+            ]);
             variantFileUrls[i] = url;
             const k = extractKey(url);
             if (k) uploadedKeys.push(k);
@@ -236,11 +239,14 @@ export class CreateBookProvider {
         }
       }
       // Re-throw a clean error
-      throw new HttpException({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: 'Asset upload failed during bulk create',
-        error: (uploadError as any).err?.message ?? String(uploadError),
-      }, HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: 'Asset upload failed during bulk create',
+          error: (uploadError as any).err?.message ?? String(uploadError),
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
 
     // 2) All uploads done successfully (uploadResults populated)
@@ -254,9 +260,9 @@ export class CreateBookProvider {
         description: dto.description,
         genre: dto.genre,
         authorId: dto.authorId ?? undefined,
-        authorName: dto.authorName ?? (dto.author?.name ?? undefined),
+        authorName: dto.authorName ?? dto.author?.name ?? undefined,
         coverImageUrl: ur?.coverUrl ?? dto.coverImageUrl ?? undefined,
-        snapshotUrls: (ur?.snapshotUrls && ur.snapshotUrls.length) ? ur.snapshotUrls : dto.snapshotUrls,
+        snapshotUrls: ur?.snapshotUrls && ur.snapshotUrls.length ? ur.snapshotUrls : dto.snapshotUrls,
         slug: dto.slug,
         metaTitle: dto.metaTitle,
         metaDescription: dto.metaDescription,
@@ -275,11 +281,11 @@ export class CreateBookProvider {
     await qr.startTransaction();
 
     // collect all uploaded keys across books for cleanup on DB failure
-    const allUploadedKeys = uploadResults.flatMap(r => r?.uploadedKeys ?? []);
+    const allUploadedKeys = uploadResults.flatMap((r) => r?.uploadedKeys ?? []);
 
     try {
       // create book entities and bulk save
-      const bookEntities = bookPayloads.map(p => qr.manager.create(Book, p));
+      const bookEntities = bookPayloads.map((p) => qr.manager.create(Book, p));
       const savedBooks = await qr.manager.save(Book, bookEntities); // saves array in batch where supported
 
       // Build variant entities for all books
@@ -291,7 +297,7 @@ export class CreateBookProvider {
         for (let vIndex = 0; vIndex < dtoVariants.length; vIndex++) {
           const vDto = dtoVariants[vIndex];
           // Convert DTO priceCents -> numeric price if your entity uses numeric/decimal 'price'
-          const priceValue = (vDto as any).priceCents !== undefined ? ((vDto as any).priceCents / 100) : null;
+          const priceValue = (vDto as any).priceCents !== undefined ? (vDto as any).priceCents / 100 : null;
           const variantPayload: Partial<any> = {
             book: savedBook,
             bookId: (savedBook as any).id,
@@ -318,7 +324,7 @@ export class CreateBookProvider {
 
       // Reload persisted books with relations for return (single query per book group)
       // To minimize DB hits, fetch all saved book IDs in one query with joins
-      const savedBookIds = (savedBooks as Book[]).map(b => b.id);
+      const savedBookIds = (savedBooks as Book[]).map((b) => b.id);
       const finalBooks = await this.bookRepository.find({
         where: savedBookIds.length ? { id: In(savedBookIds) } : {},
         relations: ['formats', 'categories', 'tags', 'metrics', 'author'],
@@ -339,11 +345,14 @@ export class CreateBookProvider {
         }
       }
 
-      throw new HttpException({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: 'Failed to persist books in bulk',
-        error: (dbErr as Error).message ?? String(dbErr),
-      }, HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: 'Failed to persist books in bulk',
+          error: (dbErr as Error).message ?? String(dbErr),
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     } finally {
       await qr.release();
     }

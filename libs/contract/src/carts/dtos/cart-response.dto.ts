@@ -1,44 +1,44 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CartItemResponseDto {
-    @ApiProperty()
-    id: string;
+  @ApiProperty()
+  id: string;
 
-    @ApiProperty()
-    bookFormatVariantId: number;
+  @ApiProperty()
+  bookFormatVariantId: number;
 
-    @ApiProperty()
-    title: string;
+  @ApiProperty()
+  title: string;
 
-    @ApiProperty()
-    unitPrice: number;
+  @ApiProperty()
+  unitPrice: number;
 
-    @ApiProperty()
-    qty: number;
+  @ApiProperty()
+  qty: number;
 
-    @ApiProperty()
-    image: string;
+  @ApiProperty()
+  image: string;
 
-    @ApiProperty()
-    subtotal: number;
+  @ApiProperty()
+  subtotal: number;
 }
 
 export class CartResponseDto {
-    @ApiProperty()
-    id: string;
+  @ApiProperty()
+  id: string;
 
-    @ApiProperty({ type: [CartItemResponseDto] })
-    items: CartItemResponseDto[];
+  @ApiProperty({ type: [CartItemResponseDto] })
+  items: CartItemResponseDto[];
 
-    @ApiProperty()
-    subtotal: number;
+  @ApiProperty()
+  subtotal: number;
 
-    @ApiProperty()
-    shipping: number;
+  @ApiProperty()
+  shipping: number;
 
-    @ApiProperty()
-    discount: number;
+  @ApiProperty()
+  discount: number;
 
-    @ApiProperty()
-    total: number;
+  @ApiProperty()
+  total: number;
 }

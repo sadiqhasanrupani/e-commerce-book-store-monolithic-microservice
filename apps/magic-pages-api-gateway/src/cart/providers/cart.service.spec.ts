@@ -155,7 +155,7 @@ describe('CartService', () => {
         expect.objectContaining({
           userId: 1,
           status: CartStatus.ACTIVE,
-        })
+        }),
       );
       expect(cartRepository.save).toHaveBeenCalled();
     });
@@ -176,9 +176,7 @@ describe('CartService', () => {
 
       await service.addToCart(1, dto);
 
-      expect(variantRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ reservedQuantity: 2 })
-      );
+      expect(variantRepository.save).toHaveBeenCalledWith(expect.objectContaining({ reservedQuantity: 2 }));
       expect(redisService.del).toHaveBeenCalledWith('cart:1');
     });
 
@@ -195,9 +193,7 @@ describe('CartService', () => {
 
       await service.addToCart(1, dto);
 
-      expect(cartItemRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ quantity: 5 })
-      );
+      expect(cartItemRepository.save).toHaveBeenCalledWith(expect.objectContaining({ quantity: 5 }));
     });
 
     it('should throw error if insufficient stock', async () => {
@@ -239,9 +235,7 @@ describe('CartService', () => {
       await service.removeFromCart(1, 'item-1');
 
       expect(cartItemRepository.delete).toHaveBeenCalledWith('item-1');
-      expect(variantRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ reservedQuantity: -3 })
-      );
+      expect(variantRepository.save).toHaveBeenCalledWith(expect.objectContaining({ reservedQuantity: -3 }));
       expect(redisService.del).toHaveBeenCalledWith('cart:1');
     });
 
@@ -291,12 +285,8 @@ describe('CartService', () => {
 
       await service.updateCartItem(1, 'item-1', dto);
 
-      expect(cartItemRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ quantity: 5 })
-      );
-      expect(variantRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ reservedQuantity: 2 })
-      );
+      expect(cartItemRepository.save).toHaveBeenCalledWith(expect.objectContaining({ quantity: 5 }));
+      expect(variantRepository.save).toHaveBeenCalledWith(expect.objectContaining({ reservedQuantity: 2 }));
       expect(redisService.del).toHaveBeenCalledWith('cart:1');
     });
 

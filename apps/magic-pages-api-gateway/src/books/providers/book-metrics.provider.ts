@@ -19,7 +19,7 @@ export class BoookMetricsProvider {
   constructor(
     @InjectRepository(BookMetric)
     private readonly metricsRepository: Repository<BookMetric>,
-  ) { }
+  ) {}
 
   /**
    * Record an analytic event (view, purchase, wishlist, etc.)

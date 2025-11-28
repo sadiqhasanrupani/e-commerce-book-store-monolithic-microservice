@@ -20,14 +20,7 @@ import { CreateBookDto } from '@app/contract/books/dtos/create-book.dto';
 import { UpdateBookDto } from '@app/contract/books/dtos/update-book.dto';
 
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import {
-  ApiBody,
-  ApiConsumes,
-  ApiOperation,
-  ApiParam,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { FilesValidationPipe } from '@app/contract/pipes/file-validation.pipe';
 
@@ -35,17 +28,14 @@ import { Role } from '../auth/decorator/role.decorator';
 import { RoleTypes } from '@app/contract/auth/enums/role-types.enum';
 import { DeleteOption } from '@app/contract/books/types/delete-book.type';
 import { Book } from '@app/contract/books/entities/book.entity';
-import {
-  FindAllBookQueryParam,
-  FindAllBookResponse,
-} from '@app/contract/books/types/find-book.type';
+import { FindAllBookQueryParam, FindAllBookResponse } from '@app/contract/books/types/find-book.type';
 import { Auth } from '../auth/decorator/auth.decorator';
 import { AuthTypes } from '@app/contract/auth/enums/auth-types.enum';
 
 @ApiTags('Books')
 @Controller('books')
 export class BooksController {
-  constructor(private readonly booksService: BooksService) { }
+  constructor(private readonly booksService: BooksService) {}
 
   // ---------------------------------------------------------------------
   // 📌 CREATE BOOK
@@ -53,8 +43,7 @@ export class BooksController {
   @Post()
   @ApiOperation({
     summary: 'Create a new book with variants & files',
-    description:
-      'Creates a book along with its format variants inside a single transaction.',
+    description: 'Creates a book along with its format variants inside a single transaction.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -136,10 +125,7 @@ export class BooksController {
 
       return { message: 'Book created successfully', data: created };
     } catch (err: any) {
-      throw new HttpException(
-        { message: err?.message || 'Failed to create book' },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException({ message: err?.message || 'Failed to create book' }, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -150,8 +136,7 @@ export class BooksController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Update an existing book',
-    description:
-      'Updates book metadata, variants, and replaces uploaded assets inside a transaction.',
+    description: 'Updates book metadata, variants, and replaces uploaded assets inside a transaction.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiParam({
@@ -207,9 +192,7 @@ export class BooksController {
     status: 200,
     description: 'Paginated book list',
   })
-  async findAll(
-    @Query() query: FindAllBookQueryParam,
-  ): Promise<FindAllBookResponse> {
+  async findAll(@Query() query: FindAllBookQueryParam): Promise<FindAllBookResponse> {
     return this.booksService.findAll(query);
   }
 

@@ -30,7 +30,7 @@ export class FindBookProvider {
      */
     @InjectRepository(Book)
     private readonly bookRepository: Repository<Book>,
-  ) { }
+  ) {}
 
   /**
    * Build base query builder used by both findAll and findOne.
@@ -262,18 +262,13 @@ export class FindBookProvider {
       const duration = Date.now() - started;
       if (duration > 50) {
         // Performance observability: slow-path detection
-        this.logger.warn(
-          `findByTitle("${title}") executed slowly: ${duration}ms`,
-        );
+        this.logger.warn(`findByTitle("${title}") executed slowly: ${duration}ms`);
       }
 
       return result ?? null;
     } catch (err) {
       // Hard failure is logged but not thrown.
-      this.logger.error(
-        `Unexpected failure in findByTitle("${title}")`,
-        err?.stack ?? err,
-      );
+      this.logger.error(`Unexpected failure in findByTitle("${title}")`, err?.stack ?? err);
       return null;
     }
   }
@@ -304,14 +299,10 @@ export class FindBookProvider {
     }
 
     // Normalize: trim, lowercase for consistent comparison
-    const normalizedTitles = rawTitles
-      .map(t => t?.trim())
-      .filter(Boolean) as string[];
+    const normalizedTitles = rawTitles.map((t) => t?.trim()).filter(Boolean) as string[];
 
     if (normalizedTitles.length === 0) {
-      this.logger.warn(
-        'findByTitles() received titles, but all were empty or invalid after normalization.',
-      );
+      this.logger.warn('findByTitles() received titles, but all were empty or invalid after normalization.');
       return [];
     }
 
@@ -323,7 +314,7 @@ export class FindBookProvider {
         .createQueryBuilder('book')
         .select(['book.id', 'book.title'])
         .where('LOWER(book.title) IN (:...titles)', {
-          titles: normalizedTitles.map(t => t.toLowerCase()),
+          titles: normalizedTitles.map((t) => t.toLowerCase()),
         })
         .andWhere('book.deletedAt IS NULL');
 
@@ -332,18 +323,13 @@ export class FindBookProvider {
       const duration = Date.now() - started;
       if (duration > 80) {
         // Slow-path detection for bulk queries
-        this.logger.warn(
-          `findByTitles() executed slowly: ${duration}ms for ${normalizedTitles.length} titles.`,
-        );
+        this.logger.warn(`findByTitles() executed slowly: ${duration}ms for ${normalizedTitles.length} titles.`);
       }
 
       return results;
     } catch (err) {
       // Log the failure but follow the non-throwing contract
-      this.logger.error(
-        `Unexpected failure in findByTitles()`,
-        err?.stack ?? err,
-      );
+      this.logger.error(`Unexpected failure in findByTitles()`, err?.stack ?? err);
       return [];
     }
   }
