@@ -1,6 +1,7 @@
 import { Module, DynamicModule, Provider } from '@nestjs/common';
 import { ClientProxy, ClientProxyFactory, Transport } from '@nestjs/microservices';
 import { RABBITMQ_CLIENT } from './constants/rmq.constant';
+import { RmqService } from './rmq.service';
 
 // types
 import { RegisterOption } from './types/register-option.type';
@@ -30,8 +31,8 @@ export class RmqModule {
 
     return {
       module: RmqModule,
-      providers: [clientProvider],
-      exports: [clientProvider],
+      providers: [clientProvider, RmqService],
+      exports: [clientProvider, RmqService],
     };
   }
 
@@ -44,7 +45,7 @@ export class RmqModule {
           transport: Transport.RMQ,
           options: {
             urls: [configService.getOrThrow<string>('rabbitmq.url')],
-            queue: configService.getOrThrow<string>('rabbitmq.queue') ?? 'magic-pages-queue',
+            queue: configService.get<string>('rabbitmq.queue') ?? 'magic-pages-queue',
             queueOptions: {
               durable: true,
             },
@@ -56,8 +57,8 @@ export class RmqModule {
     return {
       module: RmqModule,
       imports: [ConfigModule],
-      providers: [clientProvider],
-      exports: [clientProvider],
+      providers: [clientProvider, RmqService],
+      exports: [clientProvider, RmqService],
     };
   }
 }

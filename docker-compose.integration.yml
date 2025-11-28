@@ -9,3 +9,15 @@ services:
       RABBITMQ_DEFAULT_USER: test
       RABBITMQ_DEFAULT_PASS: test
       RABBITMQ_DEFAULT_VHOST: /test
+
+  postgres-test:
+    image: postgres:15
+    container_name: postgres-test
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: magic-pages-test
+    ports:
+      - "5434:5432"
+    tmpfs:
+      - /var/lib/postgresql/data

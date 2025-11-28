@@ -10,12 +10,15 @@ const config: Config = {
     '^.+\\.ts$': 'ts-jest',
   },
   rootDir: '.',
+  roots: ['<rootDir>'],
   modulePaths: ['<rootDir>'],
   moduleNameMapper: {
     '^@app/contract(|/.*)$': '<rootDir>/libs/contract/src/$1',
     '^@app/database(|/.*)$': '<rootDir>/libs/database/src/$1',
     '^@app/global-config(|/.*)$': '<rootDir>/libs/global-config/src/$1',
     '^@app/redis(|/.*)$': '<rootDir>/libs/redis/src/$1',
+    '^@rmq/rmq(|/.*)$': '<rootDir>/libs/rmq/src/$1',
+    '^apps/(.*)$': '<rootDir>/apps/$1',
   },
   transformIgnorePatterns: ['/node_modules/(?!uuid)/'],
 };

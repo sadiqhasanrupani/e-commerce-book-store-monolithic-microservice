@@ -87,6 +87,24 @@ Check out a few resources that may come in handy when working with NestJS:
 
 Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
 
+
+## OpenTelemetry Tracing
+
+To run the application with OpenTelemetry tracing enabled locally:
+
+1.  **Start Jaeger**:
+    ```bash
+    docker-compose --env-file .env.development -f docker-compose.otel.yml up -d
+    ```
+
+2.  **Start the Application**:
+    ```bash
+    npm run start:otel
+    ```
+
+3.  **View Traces**:
+    Open [http://localhost:16686](http://localhost:16686) in your browser.
+
 ## Stay in touch
 
 - Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)

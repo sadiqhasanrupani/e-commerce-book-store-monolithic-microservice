@@ -35,52 +35,52 @@ services:
     volumes:
       - ./redis-data:/data
 
-  books:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: books-microservice
-    working_dir: /app
-    command: sh -c "pnpm start:dev books"
-    volumes:
-      - .:/app
-      - /app/node_modules
-    ports:
-      - "3001:3000"
-    depends_on:
-      - postgres
-      - minio
+  # books:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: books-microservice
+  #   working_dir: /app
+  #   command: sh -c "pnpm start:dev books"
+  #   volumes:
+  #     - .:/app
+  #     - /app/node_modules
+  #   ports:
+  #     - "3001:3000"
+  #   depends_on:
+  #     - postgres
+  #     - minio
 
-  storage:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: storage-microservice
-    working_dir: /app
-    command: sh -c "pnpm start:dev storage"
-    volumes:
-      - .:/app
-      - /app/node_modules
-    ports:
-      - "3002:3000"
-    depends_on:
-      - postgres
-      - minio
+  # storage:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: storage-microservice
+  #   working_dir: /app
+  #   command: sh -c "pnpm start:dev storage"
+  #   volumes:
+  #     - .:/app
+  #     - /app/node_modules
+  #   ports:
+  #     - "3002:3000"
+  #   depends_on:
+  #     - postgres
+  #     - minio
 
-  gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: api-gateway
-    working_dir: /app
-    command: sh -c "pnpm start:dev"
-    volumes:
-      - .:/app
-      - /app/node_modules
-    ports:
-      - "3000:3000"
-    depends_on:
-      - books
-      - storage
-      - postgres
-      - redis
+  # gateway:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: api-gateway
+  #   working_dir: /app
+  #   command: sh -c "pnpm start:dev"
+  #   volumes:
+  #     - .:/app
+  #     - /app/node_modules
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - books
+  #     - storage
+  #     - postgres
+  #     - redis

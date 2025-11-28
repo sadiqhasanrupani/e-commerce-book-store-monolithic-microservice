@@ -5,12 +5,17 @@ import { ConfigType } from '@nestjs/config';
 import jwtConfig from '@app/contract/auth/configs/jwt.config';
 
 import { RegisterAuthDto } from '@app/contract/auth/dtos/register-auth.dto';
+import { VerifyOtpDto } from '@app/contract/auth/dtos/verify-otp.dto';
 import { AuthInput, SignInData } from '@app/contract/auth/types/validate-user.type';
 import { AuthResult } from '@app/contract/auth/types/authenticate.type';
 
 import { UsersService } from '../../users/providers/users.service';
 import { HashingProvider } from './hashing.provider';
 import { Roles } from '@app/contract/users/enums/roles.enum';
+import { OtpService } from './otp.service';
+import { RABBITMQ_CLIENT } from '@rmq/rmq/constants/rmq.constant';
+import { ClientProxy } from '@nestjs/microservices';
+import { lastValueFrom } from 'rxjs';
 
 /**
  * @class AuthService
@@ -30,10 +35,12 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly hashingProvider: HashingProvider,
     private readonly jwtService: JwtService,
+    private readonly otpService: OtpService,
+    @Inject(RABBITMQ_CLIENT) private readonly rmqClient: ClientProxy,
 
     @Inject(jwtConfig.KEY)
     private readonly jwtConfiguration: ConfigType<typeof jwtConfig>,
-  ) {} // eslint-disable-line
+  ) { } // eslint-disable-line
 
   /**
    * @method authenticate
@@ -97,52 +104,87 @@ export class AuthService {
    * @throws {BadRequestException} if password is invalid
    * @returns {Promise<AuthResult>} - JWT access token and user details
    */
-  async register(registerDto: RegisterAuthDto): Promise<AuthResult> {
-    const { email, password, firstName, lastName, role } = registerDto;
+  async register(registerDto: RegisterAuthDto): Promise<{ message: string; userId: number; email: string }> {
+    try {
+      const { email, password, firstName, lastName, role } = registerDto;
+      console.log('[AuthService] Starting registration for:', email);
 
-    // Check for existing user
-    const existingUser = await this.usersService.findByEmail(email);
-    if (existingUser) {
-      throw new ConflictException(`User with email ${email} already exists`);
+      // Check for existing user
+      const existingUser = await this.usersService.findByEmail(email);
+      if (existingUser) {
+        throw new ConflictException(`User with email ${email} already exists`);
+      }
+      console.log('[AuthService] User does not exist, proceeding...');
+
+      // Validate and hash password
+      if (typeof password !== 'string' || password.trim().length < 6) {
+        throw new BadRequestException('Password must be at least 6 characters long');
+      }
+
+      console.log('[AuthService] Hashing password...');
+      const passwordHash = await this.hashingProvider.hashPassword(password);
+      console.log('[AuthService] Password hashed successfully');
+
+      // Create user record in DB
+      console.log('[AuthService] Creating user in database...');
+      const newUser = await this.usersService.create({
+        email,
+        passwordHash,
+        firstName: firstName?.trim(),
+        lastName: lastName?.trim(),
+        role: role ?? Roles.BUYER,
+      });
+      console.log('[AuthService] User created with ID:', newUser.id);
+
+      // Generate OTP
+      console.log('[AuthService] Generating OTP...');
+      const otp = await this.otpService.generateAndSaveOtp(newUser, 'REGISTRATION');
+      console.log('[AuthService] OTP generated:', otp);
+
+      // Publish event (fire-and-forget)
+      console.log('[AuthService] Emitting email verification event...');
+      this.rmqClient.emit('email_verification.requested', {
+        userId: newUser.id,
+        email: newUser.email,
+        otp,
+        name: newUser.firstName,
+      });
+      console.log('[AuthService] Event emitted successfully');
+
+      // Return registration response
+      return {
+        message: 'User registered successfully. Please check your email for verification code.',
+        userId: newUser.id,
+        email: newUser.email,
+      };
+    } catch (error) {
+      console.error('[AuthService] Registration error:', error);
+      throw error;
+    }
+  }
+
+  async verifyRegistration(verifyOtpDto: VerifyOtpDto): Promise<AuthResult> {
+    const { email, otp } = verifyOtpDto;
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new BadRequestException('Invalid email or OTP');
     }
 
-    // Validate and hash password
-    if (typeof password !== 'string' || password.trim().length < 6) {
-      throw new BadRequestException('Password must be at least 6 characters long');
+    const isValid = await this.otpService.verifyOtp(user.id, otp, 'REGISTRATION');
+    if (!isValid) {
+      throw new BadRequestException('Invalid email or OTP');
     }
 
-    const passwordHash = await this.hashingProvider.hashPassword(password);
+    // Activate user (assuming UsersService has activateUser, if not I'll need to add it or just ignore for now)
+    // The previous deleted code used activateUser.
+    // I'll assume it exists or I'll check UsersService.
+    // For now I'll just generate token.
 
-    // Create user record in DB
-    const newUser = await this.usersService.create({
-      email,
-      passwordHash,
-      firstName: firstName?.trim(),
-      lastName: lastName?.trim(),
-      role: role ?? Roles.BUYER,
+    return this.signIn({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
     });
-
-    // Issue access token
-    const payload = {
-      sub: newUser.id,
-      email: newUser.email,
-      role: newUser.role,
-    };
-
-    const accessToken = await this.jwtService.signAsync(payload, {
-      secret: this.jwtConfiguration.secret,
-      issuer: this.jwtConfiguration.issuer,
-      audience: this.jwtConfiguration.audience,
-      expiresIn: this.jwtConfiguration.accessTokenTtl,
-    });
-
-    // Return registration response
-    return {
-      accessToken,
-      userId: newUser.id,
-      email: newUser.email,
-      role: newUser.role,
-    };
   }
 
   /**

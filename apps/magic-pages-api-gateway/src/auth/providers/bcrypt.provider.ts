@@ -1,4 +1,5 @@
-import bcrypt from 'bcrypt';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const bcrypt = require('bcrypt');
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { HashingProvider } from './hashing.provider';
 
