@@ -22,6 +22,8 @@ import { Order } from '@app/contract/orders/entities/order.entity';
 import { OrderItem } from '@app/contract/orders/entities/order-item.entity';
 import { OrderStatusLog } from '@app/contract/orders/entities/order-status-log.entity';
 import Redis from 'ioredis';
+import { makeCounterProvider, makeGaugeProvider, makeHistogramProvider } from '@willsoto/nestjs-prometheus';
+import { CartMetricsService } from './metrics/cart-metrics.service';
 
 @Module({
   imports: [
@@ -80,18 +82,50 @@ import Redis from 'ioredis';
     // Strategy pattern for payment
     {
       provide: 'PAYMENT_PROVIDER',
-      useFactory: (
-        configService: ConfigService,
-        phonePe: PhonePeProvider,
-        googlePay: GooglePayProvider,
-      ) => {
+      useFactory: (configService: ConfigService, phonePe: PhonePeProvider, googlePay: GooglePayProvider) => {
         const provider = configService.get<string>('PAYMENT_PROVIDER', 'phonepe');
         if (provider === 'googlepay') return googlePay;
         return phonePe;
       },
       inject: [ConfigService, PhonePeProvider, GooglePayProvider],
     },
+    // Metrics
+    CartMetricsService,
+    makeCounterProvider({
+      name: 'cart_operations_total',
+      help: 'Total number of cart operations',
+      labelNames: ['operation', 'status'],
+    }),
+    makeGaugeProvider({
+      name: 'cart_items_count',
+      help: 'Current number of items in carts',
+    }),
+    makeCounterProvider({
+      name: 'checkout_requests_total',
+      help: 'Total number of checkout requests',
+      labelNames: ['status'],
+    }),
+    makeHistogramProvider({
+      name: 'checkout_duration_seconds',
+      help: 'Duration of checkout requests in seconds',
+      buckets: [0.1, 0.5, 1, 2, 5, 10],
+    }),
+    makeCounterProvider({
+      name: 'payment_webhook_total',
+      help: 'Total number of payment webhook events',
+      labelNames: ['status', 'provider'],
+    }),
+    makeCounterProvider({
+      name: 'stock_reservation_total',
+      help: 'Total number of stock reservation operations',
+      labelNames: ['status'],
+    }),
+    makeCounterProvider({
+      name: 'cache_operations_total',
+      help: 'Total number of cache operations',
+      labelNames: ['operation'],
+    }),
   ],
-  exports: [CartService, CheckoutService],
+  exports: [CartService, CheckoutService, CartMetricsService],
 })
 export class CartModule { }

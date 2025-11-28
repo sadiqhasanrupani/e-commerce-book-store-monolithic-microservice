@@ -14,6 +14,7 @@ import { IPaymentProvider } from './interfaces/payment-provider.interface';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order } from '@app/contract/orders/entities/order.entity';
 import { PaymentStatus } from '@app/contract/orders/enums/order-status.enum';
+import { CartMetricsService } from './metrics/cart-metrics.service';
 import { Repository } from 'typeorm';
 import { Cart } from '@app/contract/carts/entities/cart.entity';
 import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
@@ -30,6 +31,7 @@ export class PaymentWebhookController {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(Cart)
     private readonly cartRepository: Repository<Cart>,
+    private readonly metricsService: CartMetricsService,
   ) { }
 
   @Post('payment')
@@ -44,8 +46,15 @@ export class PaymentWebhookController {
 
     if (!verification.isValid) {
       this.logger.warn(`Invalid webhook signature: ${verification.error}`);
+      this.metricsService.incrementPaymentWebhook('invalid_signature', 'unknown');
       throw new BadRequestException('Invalid signature');
     }
+
+    this.logger.log(`Webhook verified for transactionId: ${verification.transactionId}, status: ${verification.status}`);
+    this.metricsService.incrementPaymentWebhook(
+      verification.status === 'SUCCESS' ? 'success' : verification.status === 'FAILED' ? 'failed' : 'pending',
+      verification.provider || 'unknown'
+    );
 
     // 2. Update Order Status
     // Assuming transactionId format is PROVIDER_ORDERID_TIMESTAMP
@@ -97,8 +106,8 @@ export class PaymentWebhookController {
       const cart = await this.cartRepository.findOne({
         where: {
           userId: order.user.id,
-          status: CartStatus.CHECKOUT
-        }
+          status: CartStatus.CHECKOUT,
+        },
       });
 
       if (cart) {
@@ -106,7 +115,6 @@ export class PaymentWebhookController {
         await this.cartRepository.save(cart);
         this.logger.log(`Cart ${cart.id} marked as COMPLETED`);
       }
-
     } else if (verification.status === 'FAILED') {
       order.payment_status = PaymentStatus.FAILED;
       await this.orderRepository.save(order);
@@ -114,8 +122,8 @@ export class PaymentWebhookController {
       const cart = await this.cartRepository.findOne({
         where: {
           userId: order.user.id,
-          status: CartStatus.CHECKOUT
-        }
+          status: CartStatus.CHECKOUT,
+        },
       });
 
       if (cart) {

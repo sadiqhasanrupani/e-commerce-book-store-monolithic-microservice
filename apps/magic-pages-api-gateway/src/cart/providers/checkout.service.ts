@@ -1,10 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Cart } from '@app/contract/carts/entities/cart.entity';
@@ -15,12 +9,10 @@ import { OrderItem } from '@app/contract/orders/entities/order-item.entity';
 import { BookFormatVariant } from '@app/contract/books/entities/book-format-varient.entity';
 import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { CheckoutDto } from '@app/contract/carts/dtos/checkout.dto';
-import {
-  IPaymentProvider,
-  PaymentInitiationResponse,
-} from '../interfaces/payment-provider.interface';
+import { IPaymentProvider, PaymentInitiationResponse } from '../interfaces/payment-provider.interface';
 import { isPhysicalFormat } from '@app/contract/books/enums/book-format.enum';
 import { CartErrorCode } from '@app/contract/carts/enums/cart-error-code.enum';
+import { CartMetricsService } from '../metrics/cart-metrics.service';
 
 @Injectable()
 export class CheckoutService {
@@ -38,13 +30,12 @@ export class CheckoutService {
     private readonly dataSource: DataSource,
     @Inject('PAYMENT_PROVIDER')
     private readonly paymentProvider: IPaymentProvider,
+    private readonly metricsService: CartMetricsService,
   ) { }
 
-  async checkout(
-    userId: number,
-    dto: CheckoutDto,
-    idempotencyKey?: string,
-  ): Promise<PaymentInitiationResponse> {
+  async checkout(userId: number, dto: CheckoutDto, idempotencyKey?: string): Promise<PaymentInitiationResponse> {
+    const startTime = Date.now();
+    this.metricsService.incrementCheckoutRequest('pending');
     this.logger.log(`Initiating checkout for user ${userId}`);
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -120,8 +111,8 @@ export class CheckoutService {
               details: {
                 variantId: variant.id,
                 requested: cartItem.qty,
-                available: lockedVariant.stockQuantity // This is total physical stock
-              }
+                available: lockedVariant.stockQuantity, // This is total physical stock
+              },
             });
           }
         }
@@ -159,18 +150,8 @@ export class CheckoutService {
         const variant = cartItem.bookFormatVariant;
         if (isPhysicalFormat(variant.format)) {
           // Decrement stockQuantity AND reservedQuantity
-          await queryRunner.manager.decrement(
-            BookFormatVariant,
-            { id: variant.id },
-            'stockQuantity',
-            cartItem.qty
-          );
-          await queryRunner.manager.decrement(
-            BookFormatVariant,
-            { id: variant.id },
-            'reservedQuantity',
-            cartItem.qty
-          );
+          await queryRunner.manager.decrement(BookFormatVariant, { id: variant.id }, 'stockQuantity', cartItem.qty);
+          await queryRunner.manager.decrement(BookFormatVariant, { id: variant.id }, 'reservedQuantity', cartItem.qty);
         }
       }
 
@@ -192,6 +173,8 @@ export class CheckoutService {
           metadata: { userId, cartId: cart.id },
         });
 
+        this.metricsService.incrementCheckoutRequest('success');
+        this.metricsService.observeCheckoutDuration((Date.now() - startTime) / 1000);
         return paymentResponse;
       } catch (error) {
         // If payment initiation fails, we might want to fail the order or keep it pending?
@@ -200,9 +183,9 @@ export class CheckoutService {
         this.logger.error(`Payment initiation failed for order ${savedOrder.id}`, error);
         throw error;
       }
-
     } catch (error) {
       await queryRunner.rollbackTransaction();
+      this.metricsService.incrementCheckoutRequest('failed');
       this.logger.error('Checkout failed', error);
       throw error;
     } finally {
