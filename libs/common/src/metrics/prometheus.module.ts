@@ -15,4 +15,4 @@ import { PrometheusModule as NestPrometheusModule } from '@willsoto/nestjs-prome
   ],
   exports: [NestPrometheusModule],
 })
-export class PrometheusModule { }
+export class PrometheusModule {}
