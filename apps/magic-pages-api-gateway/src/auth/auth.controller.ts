@@ -79,14 +79,4 @@ export class AuthController {
   requestLoginOtp(@Body() dto: RequestLoginOtpDto) {
     return this.authService.requestLoginOtp(dto.email);
   }
-
-  @Auth(AuthTypes.NONE)
-  @Role(RoleTypes.NONE)
-  @ApiOperation({ summary: 'Verify OTP and login (passwordless)' })
-  @ApiResponse({ status: 200, description: 'User authenticated and token issued.' })
-  @ApiResponse({ status: 401, description: 'Invalid or expired OTP.' })
-  @Post('sign-in/otp/verify')
-  verifyLoginOtp(@Body() dto: VerifyLoginOtpDto) {
-    return this.authService.verifyLoginOtp(dto.email, dto.otp);
-  }
 }

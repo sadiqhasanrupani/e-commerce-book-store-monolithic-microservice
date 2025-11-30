@@ -73,8 +73,10 @@ async function bootstrap() {
   );
 
   // enabling cors for public usage
+  console.log('DEBUG: CORS_ORIGIN:', globalThis.process.env.CORS_ORIGIN);
+  console.log('DEBUG: ORIGIN:', globalThis.process.env.ORIGIN);
   app.enableCors({
-    origin: globalThis.process.env.ORIGIN,
+    origin: globalThis.process.env.CORS_ORIGIN ?? globalThis.process.env.ORIGIN,
     credentials: true,
   });
 
