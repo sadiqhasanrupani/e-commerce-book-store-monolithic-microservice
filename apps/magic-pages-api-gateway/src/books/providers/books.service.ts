@@ -17,7 +17,9 @@ import { DataSource, QueryRunner, Repository, SelectQueryBuilder } from 'typeorm
 import { InjectRepository } from '@nestjs/typeorm';
 
 import { Book } from '@app/contract/books/entities/book.entity';
+import { AgeGroup } from '@app/contract/age-groups/entities/age-group.entity';
 import { CreateBookDto } from '@app/contract/books/dtos/create-book.dto';
+import { In } from 'typeorm';
 import { DeleteBookProvider } from './delete-book.provider';
 import { DeleteOption } from '@app/contract/books/types/delete-book.type';
 import {
@@ -75,7 +77,7 @@ export class BooksService {
 
     /** Inject createBookProvider */
     private readonly createBookProvider: CreateBookProvider,
-  ) {} //eslint-disable-line
+  ) { } //eslint-disable-line
 
   /**
    * Extracts the object storage key (path inside the bucket) from a full URL.
@@ -344,6 +346,14 @@ export class BooksService {
         visibility: createBookDto.visibility ?? 'public',
         // leave isArchived/archivedAt/deletedAt to defaults
       };
+
+      // Handle Age Groups
+      if (createBookDto.ageGroupIds && createBookDto.ageGroupIds.length > 0) {
+        const ageGroups = await queryRunner.manager.getRepository(AgeGroup).findBy({
+          id: In(createBookDto.ageGroupIds),
+        });
+        bookPayload.ageGroups = ageGroups;
+      }
 
       // create Book row
       const bookRepo = queryRunner.manager.getRepository(Book);
@@ -759,7 +769,6 @@ export class BooksService {
         } else {
           // create new variant
           const createPayload: Partial<BookFormatVariant> = {
-            bookId: savedBook.id,
             book: savedBook,
             format: vDto.format,
             price: (vDto as any).priceCents !== undefined ? (vDto as any).priceCents / 100 : 0,
@@ -853,7 +862,7 @@ export class BooksService {
     };
   }
 
-  async findOne(id: number, options: FindOneBookOption) {
+  async findOne(id: string, options: FindOneBookOption) {
     const book = await this.findBookProvider.findOne(id, options);
 
     return {

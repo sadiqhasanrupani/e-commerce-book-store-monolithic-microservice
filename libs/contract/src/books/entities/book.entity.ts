@@ -16,6 +16,7 @@ import { Tag } from './tags.entity';
 import { BookFormatVariant } from './book-format-varient.entity';
 import { Category } from './categories.entity';
 import { BookMetric } from './book-metrics.entity';
+import { AgeGroup } from '../../age-groups/entities/age-group.entity';
 
 @Entity('books')
 @Index('idx_books_title', ['title'], { unique: true })
@@ -113,4 +114,10 @@ export class Book {
 
   @OneToMany(() => BookMetric, (metric) => metric.book)
   metrics: BookMetric[];
+
+  @ManyToMany(() => AgeGroup, (ageGroup) => ageGroup.books)
+  @JoinTable({ name: 'book_age_groups' })
+  ageGroups: AgeGroup[];
+
+  minPrice?: number;
 }

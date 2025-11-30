@@ -100,7 +100,16 @@ export class CreateBookDto {
   @IsOptional()
   @IsArray()
   @IsUUID('all', { each: true })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
   categoryIds?: string[];
+
+  /** Age Group IDs (e.g. "3-5") */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  ageGroupIds?: string[];
 
   /** Tag IDs */
   @IsOptional()
