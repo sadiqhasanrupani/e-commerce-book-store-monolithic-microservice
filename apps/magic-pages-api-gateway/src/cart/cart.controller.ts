@@ -32,13 +32,13 @@ export class CartController {
   constructor(
     private readonly cartService: CartService,
     private readonly checkoutService: CheckoutService,
-  ) {}
+  ) { }
 
   @Get()
   @ApiOperation({ summary: 'Get current user cart' })
   @ApiResponse({ status: 200, description: 'Cart retrieved successfully', type: CartResponseDto })
   async getCart(@Request() req): Promise<CartResponseDto> {
-    return this.cartService.getCart(req.user.id);
+    return this.cartService.getCart(req.user.userId);
   }
 
   @Post('items')
@@ -46,7 +46,7 @@ export class CartController {
   @ApiResponse({ status: 201, description: 'Item added to cart' })
   @ApiResponse({ status: 409, description: 'Insufficient stock' })
   async addItem(@Request() req, @Body() dto: CreateCartItemDto): Promise<CartResponseDto> {
-    return this.cartService.addToCart(req.user.id, dto);
+    return this.cartService.addToCart(req.user.userId, dto);
   }
 
   @Put('items/:itemId')
@@ -58,7 +58,7 @@ export class CartController {
     @Param('itemId') itemId: string,
     @Body() dto: UpdateCartItemDto,
   ): Promise<CartResponseDto> {
-    return this.cartService.updateCartItem(req.user.id, itemId, dto);
+    return this.cartService.updateCartItem(req.user.userId, itemId, dto);
   }
 
   @Delete('items/:itemId')
@@ -66,7 +66,7 @@ export class CartController {
   @ApiOperation({ summary: 'Remove item from cart' })
   @ApiResponse({ status: 204, description: 'Item removed successfully' })
   async removeItem(@Request() req, @Param('itemId') itemId: string): Promise<void> {
-    await this.cartService.removeFromCart(req.user.id, itemId);
+    await this.cartService.removeFromCart(req.user.userId, itemId);
   }
 
   @Post('clear')
@@ -74,7 +74,7 @@ export class CartController {
   @ApiResponse({ status: 204, description: 'Cart cleared successfully' })
   @HttpCode(HttpStatus.NO_CONTENT)
   async clearCart(@Request() req) {
-    return this.cartService.clearCart(req.user.id);
+    return this.cartService.clearCart(req.user.userId);
   }
 
   @Post('checkout')
@@ -83,6 +83,6 @@ export class CartController {
   async checkout(@Request() req, @Body() dto: CheckoutDto) {
     // TODO: Extract idempotency key from headers
     const idempotencyKey = req.headers['idempotency-key'];
-    return this.checkoutService.checkout(req.user.id, dto, idempotencyKey);
+    return this.checkoutService.checkout(req.user.userId, dto, idempotencyKey);
   }
 }
