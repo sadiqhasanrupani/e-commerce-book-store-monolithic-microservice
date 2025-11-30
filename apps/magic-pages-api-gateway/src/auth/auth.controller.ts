@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Res, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Res, HttpStatus, Get } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import { plainToInstance } from 'class-transformer';
 
 import { AuthService } from './providers/auth.service';
 
@@ -15,6 +16,9 @@ import { VerifyOtpDto } from '@app/contract/auth/dtos/verify-otp.dto';
 import { RegisterDto } from '@app/contract/auth/dtos/register.dto';
 import { RequestLoginOtpDto } from '@app/contract/auth/dtos/request-login-otp.dto';
 import { VerifyLoginOtpDto } from '@app/contract/auth/dtos/verify-login-otp.dto';
+import { MeResponseDto } from '@app/contract/users/dtos/me-response.dto';
+import { ActiveUser } from './decorator/active-user.decorator';
+import { IActiveUser } from '@app/contract/auth/interfaces/active-user.interface';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -78,5 +82,14 @@ export class AuthController {
   @Post('sign-in/otp/request')
   requestLoginOtp(@Body() dto: RequestLoginOtpDto) {
     return this.authService.requestLoginOtp(dto.email);
+  }
+
+  @Get('me')
+  @Auth(AuthTypes.BEARER)
+  @ApiOperation({ summary: 'Get current user profile' })
+  @ApiResponse({ status: 200, type: MeResponseDto })
+  async getProfile(@ActiveUser() user: IActiveUser): Promise<MeResponseDto> {
+    const userEntity = await this.authService.getMe(user.sub);
+    return plainToInstance(MeResponseDto, userEntity, { excludeExtraneousValues: true });
   }
 }

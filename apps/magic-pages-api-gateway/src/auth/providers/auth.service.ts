@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigType } from '@nestjs/config';
 
@@ -334,5 +334,24 @@ export class AuthService {
       email: user.email,
       role: user.role,
     };
+  }
+
+  /**
+   * @method getMe
+   * @description
+   * Retrieves the current authenticated user's profile.
+   *
+   * @param userId - The ID of the authenticated user
+   * @throws {NotFoundException} if user not found
+   * @returns {Promise<User>} - The user entity
+   */
+  async getMe(userId: number) {
+    const user = await this.usersService.findOne(userId);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return user;
   }
 }
