@@ -15,8 +15,7 @@ export class BookFormatVariant {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
-  bookId: string;
+
   @ManyToOne(() => Book, (book) => book.formats, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'book_id' })
   book: Book;
