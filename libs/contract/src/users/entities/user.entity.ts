@@ -1,6 +1,7 @@
 import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
 import { Roles } from '../enums/roles.enum';
+import { UserStatus } from '../enums/user-status.enum';
 import { IsEnum } from 'class-validator';
 
 @Entity({ name: 'users' })
@@ -27,8 +28,23 @@ export class User {
   @IsEnum(Roles, { message: 'Role must be either BUYER or ADMIN' })
   role: Roles;
 
+  @Column({
+    type: 'enum',
+    enum: UserStatus,
+    default: UserStatus.PENDING,
+    nullable: false,
+  })
+  @IsEnum(UserStatus)
+  status: UserStatus;
+
+  @Column({ type: 'timestamptz', nullable: true, name: 'email_verified_at' })
+  emailVerifiedAt?: Date;
+
   @Column({ type: 'varchar', length: 100, nullable: true })
   firstName?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'middle_name' })
+  middleName?: string;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   lastName?: string;

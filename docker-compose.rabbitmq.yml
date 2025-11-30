@@ -6,17 +6,46 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+      # Note: This variable below is ignored by the image itself, 
+      # but we keep it here so the init-service can read it via context
       RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST:-/magic-pages}
     ports:
-      - "5672:5672" #AMQP port (app connects here)
-      - "15672:15672" # rabbitmq web based management UI
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
     volumes:
-      -rabbitmq-data:/var/lib/rabbitmq
+      - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmqctl", "status"]
-      interval: 30s
-      timeout: 10s
+      # We switched to 'rabbitmq-diagnostics ping' which is lighter/faster than 'status'
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
       retries: 5
 
+  # This temporary service runs once to create the Vhost
+  rabbitmq-init:
+    image: curlimages/curl
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+      VHOST: ${RABBITMQ_DEFAULT_VHOST:-/magic-pages}
+    # This command strips the leading '/' from the vhost name and calls the API
+    command: >
+      /bin/sh -c "
+      echo 'Waiting for RabbitMQ Management API...';
+      target_vhost=\$$(echo $${VHOST} | sed 's|^/||');
+      
+      echo \"Creating vhost: \$$target_vhost ...\";
+      curl -f -u $${USER}:$${PASS} -X PUT http://magicpage-rabbitmq:15672/api/vhosts/\$$target_vhost;
+      
+      echo \"Granting permissions to user: \$$USER ...\";
+      curl -f -u $${USER}:$${PASS} -X PUT http://magicpage-rabbitmq:15672/api/permissions/\$$target_vhost/$${USER} \
+        -d '{\"configure\":\".*\",\"write\":\".*\",\"read\":\".*\"}';
+      
+      echo 'Done! Setup complete.';
+      "
+
 volumes:
-    - rabbitmq-data
+  rabbitmq-data:

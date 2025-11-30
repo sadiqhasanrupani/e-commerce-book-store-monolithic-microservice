@@ -21,6 +21,7 @@ import { AuthorizationGuard } from './auth/guards/authorization/authorization.gu
 import { RoleBaseAccessTokenGuard } from './auth/guards/role-base-access-token/role-base-access-token.guard';
 import { PaginationModule } from './common/pagination/pagination.module';
 import { CartModule } from './cart/cart.module';
+import { AgeGroupsModule } from './age-groups/age-groups.module';
 import { PrometheusModule } from '../../../libs/common/src/metrics';
 import { LoggerModule, RequestIdMiddleware, LoggingInterceptor } from '../../../libs/common/src/logging';
 import { MiddlewareConsumer, RequestMethod, NestModule } from '@nestjs/common';
@@ -44,6 +45,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
     UploadModule,
     PaginationModule,
     CartModule,
+    AgeGroupsModule,
   ],
   providers: [
     {

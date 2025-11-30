@@ -30,7 +30,7 @@ export class FindBookProvider {
      */
     @InjectRepository(Book)
     private readonly bookRepository: Repository<Book>,
-  ) {}
+  ) { }
 
   /**
    * Build base query builder used by both findAll and findOne.
@@ -89,6 +89,10 @@ export class FindBookProvider {
       maxRating,
       includeArchived = false,
       visibility,
+      q,
+      ageGroups,
+      categories,
+      isFeatured,
     } = queryParams || {};
 
     // runtime authorization: admins can override archive/visibility behavior
@@ -124,24 +128,72 @@ export class FindBookProvider {
         'book.id',
         'book.title',
         'book.authorName',
-        'book.price',
-        'book.rating',
         'book.genre',
-        'book.formats',
         'book.description',
         'book.isNewRelease',
-        'book.availability',
+        'book.slug',
+        'book.metaTitle',
+        'book.metaDescription',
         'book.coverImageUrl',
         'book.isBestseller',
         'book.isFeatured',
         'book.visibility',
+        'book.ageGroup',
         'book.createdAt',
-      ]);
+      ])
+        .addSelect(subQuery => {
+          return subQuery
+            // json_agg collects all results into an array
+            .select(`json_agg(
+              json_build_object(
+                'id', variant.id,
+                'format', variant.format,
+                'price', variant.price,
+                'stockQuantity', variant."stockQuantity",
+                'reservedQuantity', variant."reservedQuantity",
+                'fileUrl', variant."fileUrl",
+                'isbn', variant."isbn"
+              ) ORDER BY variant.price ASC
+            )`, 'variants')
+            .from('book_format_varients', 'variant')
+            .where('variant.book_id = book.id');
+        }, 'variantsRaw'); // This alias appears in 'raw' results
+      ;
 
-      // Apply filters
+      // --- Filters ---
+
+      // 1. Search (q) - Fuzzy match on Title, Author, Description
+      if (q && q.trim().length > 0) {
+        const searchTerm = `%${q.trim().toLowerCase()}%`;
+        qb.andWhere(
+          '(LOWER(book.title) LIKE :q OR LOWER(book.authorName) LIKE :q OR LOWER(book.description) LIKE :q)',
+          { q: searchTerm },
+        );
+      }
+
+      // 2. Age Groups (Many-to-Many)
+      if (ageGroups && ageGroups.length > 0) {
+        qb.innerJoin('book.ageGroups', 'ag', 'ag.id IN (:...ageGroups)', { ageGroups });
+      }
+
+      // 3. Categories (Many-to-Many)
+      if (categories && categories.length > 0) {
+        qb.innerJoin('book.categories', 'cat', 'cat.slug IN (:...categories) OR cat.id IN (:...categories)', {
+          categories,
+        });
+      }
+
+      if (isFeatured !== undefined) {
+        qb.andWhere('book.isFeatured = :isFeatured', { isFeatured });
+      }
+
       if (genre) qb.andWhere('book.genre = :genre', { genre });
-      if (formats) qb.andWhere('book.formats = :formats', { formats });
-      if (availability) qb.andWhere('book.availability = :availability', { availability });
+
+      if (formats && formats.length > 0) {
+        qb.innerJoin('book.formats', 'fmt', 'fmt.format IN (:...formats)', { formats });
+      }
+
+      // if (availability) qb.andWhere('book.availability = :availability', { availability });
 
       if (authorName) {
         qb.andWhere('LOWER(book.authorName) LIKE :authorName', {
@@ -149,21 +201,86 @@ export class FindBookProvider {
         });
       }
 
+      // Price and Rating are on variants or metrics, not on Book. 
+      // For MVP, disabling these filters on Book level.
+      /*
       if (minPrice !== undefined) qb.andWhere('book.price >= :minPrice', { minPrice });
       if (maxPrice !== undefined) qb.andWhere('book.price <= :maxPrice', { maxPrice });
       if (minRating !== undefined) qb.andWhere('book.rating >= :minRating', { minRating });
       if (maxRating !== undefined) qb.andWhere('book.rating <= :maxRating', { maxRating });
+      */
 
       // Sorting & pagination
-      qb.orderBy(`book.${orderField}`, orderDirection);
+      // Only allow sorting by fields that exist on Book
+      const validSortFields = new Set(['createdAt', 'updatedAt', 'title', 'isBestseller', 'isFeatured', 'publishedDate']);
+      const effectiveOrderField = validSortFields.has(orderField) ? orderField : 'createdAt';
+
+      qb.orderBy(`book.${effectiveOrderField}`, orderDirection);
+
+      // Pagination
       qb.skip(skip).take(safeLimit);
 
-      // Use PaginationProvider to execute the query and get total count efficiently.
-      // PaginationProvider is expected to return [rows, totalCount] using a performant method
-      // (e.g., combined COUNT query or optimized window function depending on DB dialect).
-      const [data, total] = await this.paginationProvider.paginateQuery({ page: safePage, limit: safeLimit }, qb);
+      // Use getRawAndEntities to get both entity data and computed minPrice
+      const { entities, raw } = await qb.getRawAndEntities();
+      const total = await qb.getCount();
+
+      // Map minPrice from raw results to entities
+      const data = entities.map((book) => {
+        const rawRow = raw.find((r) => r.book_id === book.id);
+
+        if (rawRow && rawRow.variantsRaw) {
+          (book as any).variants = rawRow.variantsRaw;
+        }
+
+        return book;
+      });
 
       const totalPages = Math.ceil(total / safeLimit);
+
+      // --- Facets Aggregation ---
+      // We clone the query builder *before* pagination but *after* filters to get accurate counts for the current result set.
+
+      const facets = {
+        ageGroups: [] as { id: string; count: number }[],
+        categories: [] as { id: string; name: string; count: number }[],
+        formats: [] as { id: string; count: number }[],
+      };
+
+      // Run facet queries in parallel
+      const [ageGroupCounts, categoryCounts, formatCounts] = await Promise.all([
+        // 1. Age Groups
+        qb.clone()
+          .orderBy() // Clear ordering
+          .innerJoin('book.ageGroups', 'ag_facet')
+          .select('ag_facet.id', 'id')
+          .addSelect('COUNT(DISTINCT book.id)', 'count')
+          .groupBy('ag_facet.id')
+          .getRawMany(),
+
+        // 2. Categories
+        qb.clone()
+          .orderBy() // Clear ordering
+          .innerJoin('book.categories', 'cat_facet')
+          .select('cat_facet.id', 'id')
+          .addSelect('cat_facet.name', 'name')
+          .addSelect('COUNT(DISTINCT book.id)', 'count')
+          .groupBy('cat_facet.id')
+          .addGroupBy('cat_facet.name')
+          .getRawMany(),
+
+        // 3. Formats
+        qb.clone()
+          .orderBy() // Clear ordering
+          .innerJoin('book.formats', 'fmt_facet')
+          .select('fmt_facet.format', 'id')
+          .addSelect('COUNT(DISTINCT book.id)', 'count')
+          .groupBy('fmt_facet.format')
+          .getRawMany(),
+      ]);
+
+      facets.ageGroups = ageGroupCounts.map(r => ({ id: r.id, count: Number(r.count) }));
+      facets.categories = categoryCounts.map(r => ({ id: r.id, name: r.name, count: Number(r.count) }));
+      facets.formats = formatCounts.map(r => ({ id: r.id, count: Number(r.count) }));
 
       return {
         meta: {
@@ -175,6 +292,7 @@ export class FindBookProvider {
           hasPreviousPage: safePage > 1,
         },
         data,
+        facets
       };
     } catch (err) {
       this.logger.error('Failed to fetch books list', err?.stack ?? err);
@@ -193,7 +311,7 @@ export class FindBookProvider {
    * @param id - book id
    * @param opts - includeArchived and includePrivate flags (admins only)
    */
-  async findOne(id: number, opts?: FindOneBookOption & { isAdmin?: boolean }): Promise<Book> {
+  async findOne(id: string, opts?: FindOneBookOption & { isAdmin?: boolean }): Promise<Book> {
     const isAdmin = !!opts?.isAdmin;
     const includeArchived = isAdmin ? !!opts?.includeArchived : false;
     const includePrivate = isAdmin ? !!opts?.includePrivate : false;

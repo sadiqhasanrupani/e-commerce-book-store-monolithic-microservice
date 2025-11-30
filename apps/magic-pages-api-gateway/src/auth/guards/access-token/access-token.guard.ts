@@ -14,7 +14,7 @@ export class AccessTokenGuard implements CanActivate {
 
     @Inject(jwtConfig.KEY)
     private readonly jwtConfiguration: ConfigType<typeof jwtConfig>,
-  ) {} // eslint-disable-line
+  ) { } // eslint-disable-line
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Extract the request from the context
@@ -46,6 +46,13 @@ export class AccessTokenGuard implements CanActivate {
 
   private extractTokenFromHeader(request: Request): string | undefined {
     const [type, token] = request.headers.authorization?.split(' ') ?? [];
-    return type === 'Bearer' ? token : undefined;
+    if (type === 'Bearer') {
+      return token;
+    }
+    // Check cookie
+    if (request.cookies && request.cookies['mp_access_token']) {
+      return request.cookies['mp_access_token'];
+    }
+    return undefined;
   }
 }

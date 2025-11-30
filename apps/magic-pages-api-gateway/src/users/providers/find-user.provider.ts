@@ -11,7 +11,7 @@ export class FindUserProvider {
      * */
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-  ) {} //eslint-disable-line
+  ) { } //eslint-disable-line
 
   async findByEmail(email: string): Promise<User | null> {
     try {
@@ -96,6 +96,21 @@ export class FindUserProvider {
         {
           cause: error,
         },
+      );
+    }
+  }
+  async findOneById(id: number): Promise<User | null> {
+    try {
+      const user = await this.userRepository.findOneBy({ id });
+      return user;
+    } catch (error: unknown) {
+      throw new HttpException(
+        {
+          status: HttpStatus.BAD_REQUEST,
+          error: 'Something went wrong',
+        },
+        HttpStatus.BAD_REQUEST,
+        { cause: error },
       );
     }
   }

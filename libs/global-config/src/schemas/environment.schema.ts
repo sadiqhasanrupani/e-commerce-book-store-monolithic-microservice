@@ -80,4 +80,13 @@ export default Joi.object({
    */
   REDIS_HOST: Joi.string().required(),
   REDIS_PORT: Joi.number().integer().min(1).max(65535).default(6379),
+
+  /**
+   * Mail Configuration
+   */
+  MAIL_HOST: Joi.string().required(),
+  MAIL_PORT: Joi.number().integer().default(587),
+  MAIL_USER: Joi.string().required(),
+  MAIL_PASS: Joi.string().required(),
+  MAIL_FROM: Joi.string().email().required(),
 });

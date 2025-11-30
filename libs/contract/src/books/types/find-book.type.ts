@@ -18,6 +18,10 @@ export type FindAllBookQueryParam = {
   maxRating?: number;
   includeArchived?: boolean;
   visibility?: 'public' | 'private' | 'draft';
+  q?: string;
+  ageGroups?: string[];
+  categories?: string[];
+  isFeatured?: boolean;
 };
 
 export type PaginatedBook = {
@@ -30,6 +34,11 @@ export type PaginatedBook = {
     hasPreviousPage: boolean;
   };
   data: Book[];
+  facets?: {
+    ageGroups?: { id: string; count: number }[];
+    categories?: { id: string; name: string; count: number }[];
+    formats?: { id: string; count: number }[];
+  };
 };
 
 export type FindAllBookResponse = {

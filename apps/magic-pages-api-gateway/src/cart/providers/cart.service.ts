@@ -90,6 +90,8 @@ export class CartService {
       // Lock the variant row with FOR UPDATE (pessimistic locking)
       const variant = await queryRunner.manager
         .createQueryBuilder(BookFormatVariant, 'variant')
+        // .leftJoinAndSelect('variant.book', 'book')
+        .innerJoinAndSelect('variant.book', 'book')
         .setLock('pessimistic_write')
         .where('variant.id = :id', { id: dto.bookFormatVariantId })
         .getOne();
@@ -116,14 +118,12 @@ export class CartService {
         await queryRunner.manager.update(
           BookFormatVariant,
           { id: variant.id },
-          { reservedQuantity: () => `reserved_quantity + ${dto.qty}` },
+          { reservedQuantity: () => `reservedQuantity + ${dto.qty}` },
         );
       }
 
-      // Get book details for snapshot
-      const book = await queryRunner.manager.findOne(Book, {
-        where: { id: variant.bookId },
-      });
+      // Get book details from relation
+      const book = variant.book;
 
       // Check if item already exists in cart
       const existingItem = await queryRunner.manager.findOne(CartItem, {

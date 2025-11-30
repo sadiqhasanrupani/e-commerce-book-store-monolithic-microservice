@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 // providers
@@ -16,9 +16,9 @@ import { RemoveUserProvider } from './providers/remove-user.provider';
 import { User } from '@app/contract/users/entities/user.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User]), AuthModule],
+  imports: [TypeOrmModule.forFeature([User]), forwardRef(() => AuthModule)],
   controllers: [UsersController],
   providers: [UsersService, CreateUserProvider, UpdateUserProvider, FindUserProvider, RemoveUserProvider],
   exports: [TypeOrmModule, UsersService],
 })
-export class UsersModule {} //eslint-disable-line
+export class UsersModule { } //eslint-disable-line

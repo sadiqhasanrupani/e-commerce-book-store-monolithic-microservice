@@ -23,7 +23,7 @@ export class TracingInterceptor implements NestInterceptor {
 
     // Log trace start (in production, this would create an OpenTelemetry span)
     console.log(`[Trace Start] ${operation}`, {
-      userId: user?.id,
+      userId: user?.userId,
       method,
       url,
       timestamp: new Date().toISOString(),
@@ -36,7 +36,7 @@ export class TracingInterceptor implements NestInterceptor {
 
           // Log successful trace (in production, this would end the span with success)
           console.log(`[Trace Success] ${operation}`, {
-            userId: user?.id,
+            userId: user?.userId,
             duration: `${duration}ms`,
             status: 'success',
           });
@@ -46,7 +46,7 @@ export class TracingInterceptor implements NestInterceptor {
 
           // Log error trace (in production, this would end the span with error)
           console.error(`[Trace Error] ${operation}`, {
-            userId: user?.id,
+            userId: user?.userId,
             duration: `${duration}ms`,
             status: 'error',
             errorCode: error.response?.code || error.status,

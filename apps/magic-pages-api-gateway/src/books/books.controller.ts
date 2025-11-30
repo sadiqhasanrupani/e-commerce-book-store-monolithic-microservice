@@ -12,6 +12,7 @@ import {
   Put,
   HttpCode,
   Get,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 
 import { BooksService } from './providers/books.service';
@@ -35,7 +36,7 @@ import { AuthTypes } from '@app/contract/auth/enums/auth-types.enum';
 @ApiTags('Books')
 @Controller('books')
 export class BooksController {
-  constructor(private readonly booksService: BooksService) {}
+  constructor(private readonly booksService: BooksService) { }
 
   // ---------------------------------------------------------------------
   // 📌 CREATE BOOK
@@ -197,6 +198,24 @@ export class BooksController {
   }
 
   // ---------------------------------------------------------------------
+  // 📌 FEATURED BOOKS
+  // ---------------------------------------------------------------------
+  @Auth(AuthTypes.NONE)
+  @Role(RoleTypes.NONE)
+  @Get('featured')
+  @ApiOperation({
+    summary: 'Get featured books',
+    description: 'Returns a list of books marked as featured.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of featured books',
+  })
+  async getFeaturedBooks() {
+    return this.booksService.findAll({ isFeatured: true });
+  }
+
+  // ---------------------------------------------------------------------
   // 📌 FIND ONE (PUBLIC)
   // ---------------------------------------------------------------------
   @Get(':id')
@@ -208,7 +227,7 @@ export class BooksController {
     type: 'string',
     example: '5ec98e94-3b84-4b70-8727-bff123c1ea92',
   })
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.booksService.findOne(id as any, {});
   }
 
