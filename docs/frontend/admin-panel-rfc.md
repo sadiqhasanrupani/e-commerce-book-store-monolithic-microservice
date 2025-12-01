@@ -80,6 +80,9 @@ Base URL: `/api/v1/browse`
 | `POST` | `/categories` | Create a single category | `CreateCategoryDto` |
 | `PUT` | `/categories/:id` | Update a single category | `UpdateCategoryDto` |
 | `DELETE` | `/categories/:id` | Delete a single category | - |
+| `POST` | `/categories/bulk` | Bulk create categories | `{ categories: CreateCategoryDto[] }` |
+| `PUT` | `/categories/bulk` | Bulk update categories | `{ categories: UpdateCategoryWithIdDto[] }` |
+| `DELETE` | `/categories/bulk` | Bulk delete categories | `{ ids: string[] }` |
 
 #### Example: Create Category
 **Request:** `POST /api/v1/categories`
