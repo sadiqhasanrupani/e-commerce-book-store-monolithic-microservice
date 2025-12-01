@@ -8,6 +8,7 @@ import { Role } from '../auth/decorator/role.decorator';
 import { RoleTypes } from '@app/contract/auth/enums/role-types.enum';
 import { FindAllBookQueryParam } from '@app/contract/books/types/find-book.type';
 import { UserContextService } from '../auth/providers/user-context.service';
+import { FindAllCategoriesDto } from '@app/contract/categories/dtos/find-all-categories.dto';
 
 @ApiTags('Categories')
 @Controller('categories')
@@ -17,6 +18,14 @@ export class CategoriesController {
     private readonly booksService: BooksService,
     private readonly userContextService: UserContextService,
   ) { }
+
+  @Auth(AuthTypes.NONE)
+  @Role(RoleTypes.NONE)
+  @Get()
+  @ApiOperation({ summary: 'Get all categories' })
+  async findAll(@Query() query: FindAllCategoriesDto) {
+    return this.categoriesService.findAll(query);
+  }
 
   @Auth(AuthTypes.NONE)
   @Role(RoleTypes.NONE)

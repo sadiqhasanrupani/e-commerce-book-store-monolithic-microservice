@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, IsNull } from 'typeorm';
 import { Category } from '@app/contract/books/entities/categories.entity';
 import { CreateCategoryDto } from '@app/contract/categories/dtos/create-category.dto';
 import { UpdateCategoryDto } from '@app/contract/categories/dtos/update-category.dto';
@@ -18,10 +18,34 @@ export class CategoriesService {
     private readonly dataSource: DataSource,
   ) { }
 
-  async findAll() {
-    return this.categoryRepository.find({
+  async findAll(query: { page?: number; limit?: number; parent_id?: string }) {
+    const { page = 1, limit = 20, parent_id } = query;
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (parent_id) {
+      where.parent = { id: parent_id };
+    } else {
+      where.parent = IsNull();
+    }
+
+    const [data, total] = await this.categoryRepository.findAndCount({
+      where,
       relations: ['children'],
+      skip,
+      take: limit,
     });
+
+    return {
+      message: 'Categories retrieved successfully',
+      data,
+      meta: {
+        itemsPerPage: limit,
+        totalItems: total,
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async findBySlug(slug: string) {
