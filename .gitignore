@@ -71,3 +71,5 @@ postgres-data/
 internal-docs/
 sprint-reports/
 redis-data/
+
+/test-videos

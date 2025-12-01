@@ -80,6 +80,16 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // Swagger Setup
+  const config = new DocumentBuilder()
+    .setTitle('Magic Pages API')
+    .setDescription('The Magic Pages API description')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document);
+
   // Start HTTP server first
   await app.listen(globalThis.process.env.PORT ?? 8080);
   logger.log(`[Bootstrap] HTTP Server is running on: http://localhost:${globalThis.process.env.PORT ?? 8080}`);
