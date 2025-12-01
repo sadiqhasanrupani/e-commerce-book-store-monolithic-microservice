@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -33,11 +33,15 @@ export class UploadToStorageProvider {
       forcePathStyle: true,
     });
 
-    this.logger.log(`S3 Client configured:
-      Endpoint: ${this.endpoint}
-      Bucket: ${this.bucketName}
-      Region: ${this.region}
-    `);
+    if (!accessKeyId || !secretAccessKey || !this.bucketName) {
+      this.logger.warn('Storage configuration is missing or incomplete. File uploads will fail.');
+    } else {
+      this.logger.log(`S3 Client configured:
+        Endpoint: ${this.endpoint}
+        Bucket: ${this.bucketName}
+        Region: ${this.region}
+      `);
+    }
   }
 
   /**
@@ -45,6 +49,10 @@ export class UploadToStorageProvider {
    */
   async uploadFile(file: Express.Multer.File, type: UploadType = 'other'): Promise<string> {
     if (!file) throw new BadRequestException('File is required');
+
+    if (!this.bucketName || !this.configService.get<string>('s3.storageAccessKey')) {
+      throw new InternalServerErrorException('Storage configuration is missing. Please check STORAGE_BUCKET, STORAGE_ACCESS_KEY, and STORAGE_SECRET_KEY.');
+    }
 
     this.validateFileType(file, type);
 
