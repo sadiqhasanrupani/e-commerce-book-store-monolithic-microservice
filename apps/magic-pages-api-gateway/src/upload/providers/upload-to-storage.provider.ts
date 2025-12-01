@@ -1,13 +1,13 @@
-import { Injectable, Logger, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, InternalServerErrorException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { S3Client, PutObjectCommand, PutObjectCommandInput } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, PutObjectCommandInput, HeadBucketCommand, CreateBucketCommand } from '@aws-sdk/client-s3';
 
 type UploadType = 'photo' | 'pdf' | 'xls' | 'other';
 
 @Injectable()
-export class UploadToStorageProvider {
+export class UploadToStorageProvider implements OnModuleInit {
   private readonly logger = new Logger(UploadToStorageProvider.name);
   private readonly s3: S3Client;
   private readonly bucketName: string;
@@ -41,6 +41,31 @@ export class UploadToStorageProvider {
         Bucket: ${this.bucketName}
         Region: ${this.region}
       `);
+    }
+  }
+
+  async onModuleInit() {
+    if (this.bucketName) {
+      await this.createBucketIfNotExists();
+    }
+  }
+
+  private async createBucketIfNotExists() {
+    try {
+      await this.s3.send(new HeadBucketCommand({ Bucket: this.bucketName }));
+      this.logger.log(`Bucket "${this.bucketName}" exists.`);
+    } catch (err) {
+      if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+        this.logger.log(`Bucket "${this.bucketName}" not found. Creating...`);
+        try {
+          await this.s3.send(new CreateBucketCommand({ Bucket: this.bucketName }));
+          this.logger.log(`Bucket "${this.bucketName}" created successfully.`);
+        } catch (createErr) {
+          this.logger.error(`Failed to create bucket "${this.bucketName}":`, createErr);
+        }
+      } else {
+        this.logger.error(`Error checking bucket "${this.bucketName}":`, err);
+      }
     }
   }
 
