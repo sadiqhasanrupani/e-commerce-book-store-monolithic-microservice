@@ -1,5 +1,6 @@
 import { IsString, IsNotEmpty, IsOptional, IsInt, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export class CreateAgeGroupDto {
   @ApiProperty({ example: '3-5', description: 'Unique identifier for the age group' })
@@ -17,6 +18,7 @@ export class CreateAgeGroupDto {
   @ApiPropertyOptional({ example: 1, description: 'Sort order for display' })
   @IsInt()
   @IsOptional()
+  @Type(() => Number)
   sortOrder?: number;
 
   @ApiPropertyOptional({ example: 'Books for toddlers', description: 'Description of the age group' })
@@ -24,9 +26,7 @@ export class CreateAgeGroupDto {
   @IsOptional()
   description?: string;
 
-  @ApiPropertyOptional({ example: 'https://example.com/image.jpg', description: 'Hero image URL' })
-  @IsString()
+  @ApiPropertyOptional({ type: 'string', format: 'binary', description: 'Hero image file' })
   @IsOptional()
-  @MaxLength(255)
-  heroImage?: string;
+  heroImage?: any; // Changed to any to accept file in controller, but service expects string URL
 }
