@@ -6,13 +6,15 @@ import { CategoriesService } from './providers/categories.service';
 import { BooksModule } from '../books/books.module';
 import { AuthModule } from '../auth/auth.module';
 
+import { CategoriesAdminController } from './categories-admin.controller';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([Category]),
     BooksModule,
     AuthModule,
   ],
-  controllers: [CategoriesController],
+  controllers: [CategoriesController, CategoriesAdminController],
   providers: [CategoriesService],
   exports: [CategoriesService],
 })
