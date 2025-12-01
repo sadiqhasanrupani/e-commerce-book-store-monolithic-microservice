@@ -77,7 +77,7 @@ export class FindBookProvider {
     const {
       page = 1,
       limit = 10,
-      sortBy = 'createdAt',
+      sortBy,
       sortOrder = 'DESC',
       genre,
       formats,
@@ -93,6 +93,8 @@ export class FindBookProvider {
       ageGroups,
       categories,
       isFeatured,
+      isBestseller,
+      isNewRelease,
     } = queryParams || {};
 
     // runtime authorization: admins can override archive/visibility behavior
@@ -163,12 +165,27 @@ export class FindBookProvider {
       // --- Filters ---
 
       // 1. Search (q) - Fuzzy match on Title, Author, Description
+      // 1. Search (q) - Full Text Search with Trigram Fallback
+      let searchMode: 'fts' | 'fuzzy' | 'none' = 'none';
+
       if (q && q.trim().length > 0) {
-        const searchTerm = `%${q.trim().toLowerCase()}%`;
-        qb.andWhere(
-          '(LOWER(book.title) LIKE :q OR LOWER(book.authorName) LIKE :q OR LOWER(book.description) LIKE :q)',
-          { q: searchTerm },
-        );
+        // Check if FTS yields results
+        const ftsQb = qb.clone();
+        ftsQb.andWhere(`book.tsv @@ websearch_to_tsquery('english', :q)`, { q });
+        // We only need to know if there is at least 1 result, but count is safest
+        const ftsCount = await ftsQb.getCount();
+
+        if (ftsCount > 0) {
+          searchMode = 'fts';
+          qb.andWhere(`book.tsv @@ websearch_to_tsquery('english', :q)`, { q });
+        } else {
+          // Fallback to Trigram Similarity
+          searchMode = 'fuzzy';
+          qb.andWhere(
+            `(similarity(book.title, :q) > 0.1 OR similarity(book.authorName, :q) > 0.1)`,
+            { q }
+          );
+        }
       }
 
       // 2. Age Groups (Many-to-Many)
@@ -185,6 +202,14 @@ export class FindBookProvider {
 
       if (isFeatured !== undefined) {
         qb.andWhere('book.isFeatured = :isFeatured', { isFeatured });
+      }
+
+      if (isBestseller !== undefined) {
+        qb.andWhere('book.isBestseller = :isBestseller', { isBestseller });
+      }
+
+      if (isNewRelease !== undefined) {
+        qb.andWhere('book.isNewRelease = :isNewRelease', { isNewRelease });
       }
 
       if (genre) qb.andWhere('book.genre = :genre', { genre });
@@ -212,10 +237,22 @@ export class FindBookProvider {
 
       // Sorting & pagination
       // Only allow sorting by fields that exist on Book
+      // Sorting & pagination
+      // Only allow sorting by fields that exist on Book
       const validSortFields = new Set(['createdAt', 'updatedAt', 'title', 'isBestseller', 'isFeatured', 'publishedDate']);
-      const effectiveOrderField = validSortFields.has(orderField) ? orderField : 'createdAt';
 
-      qb.orderBy(`book.${effectiveOrderField}`, orderDirection);
+      if ((sortBy as any) === 'relevance' || (!sortBy && q)) {
+        if (searchMode === 'fts') {
+          qb.orderBy(`ts_rank(book.tsv, websearch_to_tsquery('english', :q))`, 'DESC');
+        } else if (searchMode === 'fuzzy') {
+          qb.orderBy(`similarity(book.title, :q)`, 'DESC');
+        } else {
+          qb.orderBy('book.createdAt', 'DESC');
+        }
+      } else {
+        const effectiveOrderField = validSortFields.has(orderField) ? orderField : 'createdAt';
+        qb.orderBy(`book.${effectiveOrderField}`, orderDirection);
+      }
 
       // Pagination
       qb.skip(skip).take(safeLimit);
@@ -229,7 +266,7 @@ export class FindBookProvider {
         const rawRow = raw.find((r) => r.book_id === book.id);
 
         if (rawRow && rawRow.variantsRaw) {
-          (book as any).variants = rawRow.variantsRaw;
+          book.formats = rawRow.variantsRaw;
         }
 
         return book;
@@ -244,10 +281,11 @@ export class FindBookProvider {
         ageGroups: [] as { id: string; count: number }[],
         categories: [] as { id: string; name: string; count: number }[],
         formats: [] as { id: string; count: number }[],
+        genres: [] as { label: string; count: number; value: string }[],
       };
 
       // Run facet queries in parallel
-      const [ageGroupCounts, categoryCounts, formatCounts] = await Promise.all([
+      const [ageGroupCounts, categoryCounts, formatCounts, genreCounts] = await Promise.all([
         // 1. Age Groups
         qb.clone()
           .orderBy() // Clear ordering
@@ -276,11 +314,21 @@ export class FindBookProvider {
           .addSelect('COUNT(DISTINCT book.id)', 'count')
           .groupBy('fmt_facet.format')
           .getRawMany(),
+
+        // 4. Genres
+        qb.clone()
+          .orderBy()
+          .select('book.genre', 'genre')
+          .addSelect('COUNT(DISTINCT book.id)', 'count')
+          .where('book.genre IS NOT NULL')
+          .groupBy('book.genre')
+          .getRawMany(),
       ]);
 
       facets.ageGroups = ageGroupCounts.map(r => ({ id: r.id, count: Number(r.count) }));
       facets.categories = categoryCounts.map(r => ({ id: r.id, name: r.name, count: Number(r.count) }));
       facets.formats = formatCounts.map(r => ({ id: r.id, count: Number(r.count) }));
+      facets.genres = genreCounts.map(r => ({ label: r.genre, value: r.genre, count: Number(r.count) }));
 
       return {
         meta: {
@@ -319,7 +367,8 @@ export class FindBookProvider {
     try {
       const qb = this.baseQb(includeArchived, includePrivate)
         .andWhere('book.id = :id', { id })
-        .leftJoinAndSelect('book.author', 'author'); // eager load author for detail
+        .leftJoinAndSelect('book.author', 'author')
+        .leftJoinAndSelect('book.formats', 'formats'); // eager load author and formats for detail
 
       const book = await qb.getOne();
 

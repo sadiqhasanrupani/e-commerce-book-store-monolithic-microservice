@@ -22,7 +22,11 @@ export type FindAllBookQueryParam = {
   ageGroups?: string[];
   categories?: string[];
   isFeatured?: boolean;
+  isBestseller?: boolean;
+  isNewRelease?: boolean;
 };
+
+import { BookResponseDto } from '../dtos/book-response.dto';
 
 export type PaginatedBook = {
   meta: {
@@ -33,7 +37,7 @@ export type PaginatedBook = {
     hasNextPage: boolean;
     hasPreviousPage: boolean;
   };
-  data: Book[];
+  data: BookResponseDto[];
   facets?: {
     ageGroups?: { id: string; count: number }[];
     categories?: { id: string; name: string; count: number }[];
@@ -45,4 +49,15 @@ export type FindAllBookResponse = {
   message: string;
 } & PaginatedBook;
 
-export type FindOneBookOption = { includeArchived?: boolean; includePrivate?: boolean };
+import { UserContext } from 'apps/magic-pages-api-gateway/src/auth/providers/user-context.service';
+
+export interface FindOneBookOption {
+  includeArchived?: boolean;
+  includePrivate?: boolean;
+  userContext?: UserContext;
+}
+
+export interface FindAllBookOptions {
+  userContext?: UserContext;
+  isAdmin?: boolean;
+};
