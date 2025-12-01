@@ -110,26 +110,24 @@ Base URL: `/api/v1/browse`
 
 ### 4.4 Age Groups Management
 
-| Method | Endpoint | Description | Body |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/age-groups` | Create a single age group | `CreateAgeGroupDto` |
-| `PUT` | `/age-groups/:id` | Update a single age group | `UpdateAgeGroupDto` |
-| `DELETE` | `/age-groups/:id` | Delete a single age group | - |
-| `POST` | `/age-groups/bulk` | Bulk create age groups | `{ ageGroups: CreateAgeGroupDto[] }` |
-| `PUT` | `/age-groups/bulk` | Bulk update age groups | `{ ageGroups: UpdateAgeGroupWithIdDto[] }` |
-| `DELETE` | `/age-groups/bulk` | Bulk delete age groups | `{ ids: string[] }` |
+| Method | Endpoint | Description | Content-Type | Body |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/age-groups` | Create a single age group | `multipart/form-data` | `CreateAgeGroupDto` (with `heroImage` file) |
+| `PUT` | `/age-groups/:id` | Update a single age group | `multipart/form-data` | `UpdateAgeGroupDto` (with `heroImage` file) |
+| `DELETE` | `/age-groups/:id` | Delete a single age group | - | - |
+| `POST` | `/age-groups/bulk` | Bulk create age groups | `application/json` | `{ ageGroups: CreateAgeGroupDto[] }` |
+| `PUT` | `/age-groups/bulk` | Bulk update age groups | `application/json` | `{ ageGroups: UpdateAgeGroupWithIdDto[] }` |
+| `DELETE` | `/age-groups/bulk` | Bulk delete age groups | `application/json` | `{ ids: string[] }` |
 
 #### Example: Create Age Group
 **Request:** `POST /api/v1/age-groups`
-```json
-{
-  "id": "3-5",
-  "label": "Ages 3-5",
-  "sortOrder": 2,
-  "description": "Picture books and early learning.",
-  "heroImage": "https://example.com/images/ages-3-5.jpg"
-}
-```
+**Headers:** `Content-Type: multipart/form-data`
+**Form Data:**
+- `id`: "3-5"
+- `label`: "Ages 3-5"
+- `sortOrder`: 2
+- `description`: "Picture books and early learning."
+- `heroImage`: [File Object]
 
 **Response:**
 ```json
@@ -138,7 +136,7 @@ Base URL: `/api/v1/browse`
   "label": "Ages 3-5",
   "sortOrder": 2,
   "description": "Picture books and early learning.",
-  "heroImage": "https://example.com/images/ages-3-5.jpg"
+  "heroImage": "https://storage.googleapis.com/bucket/image.jpg"
 }
 ```
 
