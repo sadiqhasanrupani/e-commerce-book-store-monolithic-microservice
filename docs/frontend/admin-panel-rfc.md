@@ -73,6 +73,38 @@ Base URL: `/api/v1/browse`
 | `PUT` | `/collections/bulk` | Bulk update collections | `{ collections: UpdateBrowseCollectionWithIdDto[] }` |
 | `DELETE` | `/collections/bulk` | Bulk delete collections | `{ ids: string[] }` |
 
+### 4.3 Categories Management
+
+| Method | Endpoint | Description | Body |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/categories` | Create a single category | `CreateCategoryDto` |
+| `PUT` | `/categories/:id` | Update a single category | `UpdateCategoryDto` |
+| `DELETE` | `/categories/:id` | Delete a single category | - |
+
+#### Example: Create Category
+**Request:** `POST /api/v1/categories`
+```json
+{
+  "name": "Science Fiction",
+  "slug": "science-fiction",
+  "age_group": "Teens",
+  "parent_id": "uuid-of-parent-category"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "uuid-new-category",
+  "name": "Science Fiction",
+  "slug": "science-fiction",
+  "age_group": "Teens",
+  "parent_id": "uuid-of-parent-category",
+  "created_at": "2023-10-27T10:00:00Z",
+  "updated_at": "2023-10-27T10:00:00Z"
+}
+```
+
 ## 5. Next.js Implementation Guidelines
 
 ### 5.1 Fetching Data
