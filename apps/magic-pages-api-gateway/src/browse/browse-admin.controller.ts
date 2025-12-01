@@ -1,12 +1,14 @@
-import { Controller, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Post, Put, Delete, Body, Param } from '@nestjs/common';
+import { ApiOperation, ApiTags, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { BrowseService } from './providers/browse.service';
 import { Auth } from '../auth/decorator/auth.decorator';
 import { AuthTypes } from '@app/contract/auth/enums/auth-types.enum';
 import { Role } from '../auth/decorator/role.decorator';
 import { RoleTypes } from '@app/contract/auth/enums/role-types.enum';
-import { BrowseFormat } from '@app/contract/browse/entities/browse-format.entity';
-import { BrowseCollection } from '@app/contract/browse/entities/browse-collection.entity';
+import { CreateBrowseFormatDto } from '@app/contract/browse/dtos/create-browse-format.dto';
+import { UpdateBrowseFormatDto } from '@app/contract/browse/dtos/update-browse-format.dto';
+import { CreateBrowseCollectionDto } from '@app/contract/browse/dtos/create-browse-collection.dto';
+import { UpdateBrowseCollectionDto } from '@app/contract/browse/dtos/update-browse-collection.dto';
 
 @ApiTags('Browse Admin')
 @ApiBearerAuth()
@@ -20,16 +22,18 @@ export class BrowseAdminController {
   @Role(RoleTypes.ADMIN)
   @Post('formats')
   @ApiOperation({ summary: 'Create a browse format' })
-  async createFormat(@Body() data: Partial<BrowseFormat>) {
-    return this.browseService.createFormat(data);
+  @ApiBody({ type: CreateBrowseFormatDto })
+  async createFormat(@Body() createBrowseFormatDto: CreateBrowseFormatDto) {
+    return this.browseService.createFormat(createBrowseFormatDto);
   }
 
   @Auth(AuthTypes.BEARER)
   @Role(RoleTypes.ADMIN)
   @Put('formats/:id')
   @ApiOperation({ summary: 'Update a browse format' })
-  async updateFormat(@Param('id') id: string, @Body() data: Partial<BrowseFormat>) {
-    return this.browseService.updateFormat(id, data);
+  @ApiBody({ type: UpdateBrowseFormatDto })
+  async updateFormat(@Param('id') id: string, @Body() updateBrowseFormatDto: UpdateBrowseFormatDto) {
+    return this.browseService.updateFormat(id, updateBrowseFormatDto);
   }
 
   @Auth(AuthTypes.BEARER)
@@ -46,16 +50,18 @@ export class BrowseAdminController {
   @Role(RoleTypes.ADMIN)
   @Post('collections')
   @ApiOperation({ summary: 'Create a browse collection' })
-  async createCollection(@Body() data: Partial<BrowseCollection>) {
-    return this.browseService.createCollection(data);
+  @ApiBody({ type: CreateBrowseCollectionDto })
+  async createCollection(@Body() createBrowseCollectionDto: CreateBrowseCollectionDto) {
+    return this.browseService.createCollection(createBrowseCollectionDto);
   }
 
   @Auth(AuthTypes.BEARER)
   @Role(RoleTypes.ADMIN)
   @Put('collections/:id')
   @ApiOperation({ summary: 'Update a browse collection' })
-  async updateCollection(@Param('id') id: string, @Body() data: Partial<BrowseCollection>) {
-    return this.browseService.updateCollection(id, data);
+  @ApiBody({ type: UpdateBrowseCollectionDto })
+  async updateCollection(@Param('id') id: string, @Body() updateBrowseCollectionDto: UpdateBrowseCollectionDto) {
+    return this.browseService.updateCollection(id, updateBrowseCollectionDto);
   }
 
   @Auth(AuthTypes.BEARER)

@@ -5,6 +5,10 @@ import { AgeGroupsService } from '../../age-groups/providers/age-groups.service'
 import { CategoriesService } from '../../categories/providers/categories.service';
 import { BrowseFormat } from '@app/contract/browse/entities/browse-format.entity';
 import { BrowseCollection } from '@app/contract/browse/entities/browse-collection.entity';
+import { CreateBrowseFormatDto } from '@app/contract/browse/dtos/create-browse-format.dto';
+import { UpdateBrowseFormatDto } from '@app/contract/browse/dtos/update-browse-format.dto';
+import { CreateBrowseCollectionDto } from '@app/contract/browse/dtos/create-browse-collection.dto';
+import { UpdateBrowseCollectionDto } from '@app/contract/browse/dtos/update-browse-collection.dto';
 
 @Injectable()
 export class BrowseService {
@@ -35,15 +39,15 @@ export class BrowseService {
 
   // --- Admin CRUD for Formats ---
 
-  async createFormat(data: Partial<BrowseFormat>) {
-    const format = this.formatRepository.create(data);
+  async createFormat(createBrowseFormatDto: CreateBrowseFormatDto) {
+    const format = this.formatRepository.create(createBrowseFormatDto);
     return this.formatRepository.save(format);
   }
 
-  async updateFormat(id: string, data: Partial<BrowseFormat>) {
+  async updateFormat(id: string, updateBrowseFormatDto: UpdateBrowseFormatDto) {
     const format = await this.formatRepository.findOneBy({ id });
     if (!format) throw new NotFoundException('Format not found');
-    Object.assign(format, data);
+    Object.assign(format, updateBrowseFormatDto);
     return this.formatRepository.save(format);
   }
 
@@ -55,15 +59,15 @@ export class BrowseService {
 
   // --- Admin CRUD for Collections ---
 
-  async createCollection(data: Partial<BrowseCollection>) {
-    const collection = this.collectionRepository.create(data);
+  async createCollection(createBrowseCollectionDto: CreateBrowseCollectionDto) {
+    const collection = this.collectionRepository.create(createBrowseCollectionDto);
     return this.collectionRepository.save(collection);
   }
 
-  async updateCollection(id: string, data: Partial<BrowseCollection>) {
+  async updateCollection(id: string, updateBrowseCollectionDto: UpdateBrowseCollectionDto) {
     const collection = await this.collectionRepository.findOneBy({ id });
     if (!collection) throw new NotFoundException('Collection not found');
-    Object.assign(collection, data);
+    Object.assign(collection, updateBrowseCollectionDto);
     return this.collectionRepository.save(collection);
   }
 
