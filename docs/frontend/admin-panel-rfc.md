@@ -108,6 +108,40 @@ Base URL: `/api/v1/browse`
 }
 ```
 
+### 4.4 Age Groups Management
+
+| Method | Endpoint | Description | Body |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/age-groups` | Create a single age group | `CreateAgeGroupDto` |
+| `PUT` | `/age-groups/:id` | Update a single age group | `UpdateAgeGroupDto` |
+| `DELETE` | `/age-groups/:id` | Delete a single age group | - |
+| `POST` | `/age-groups/bulk` | Bulk create age groups | `{ ageGroups: CreateAgeGroupDto[] }` |
+| `PUT` | `/age-groups/bulk` | Bulk update age groups | `{ ageGroups: UpdateAgeGroupWithIdDto[] }` |
+| `DELETE` | `/age-groups/bulk` | Bulk delete age groups | `{ ids: string[] }` |
+
+#### Example: Create Age Group
+**Request:** `POST /api/v1/age-groups`
+```json
+{
+  "id": "3-5",
+  "label": "Ages 3-5",
+  "sortOrder": 2,
+  "description": "Picture books and early learning.",
+  "heroImage": "https://example.com/images/ages-3-5.jpg"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "3-5",
+  "label": "Ages 3-5",
+  "sortOrder": 2,
+  "description": "Picture books and early learning.",
+  "heroImage": "https://example.com/images/ages-3-5.jpg"
+}
+```
+
 ## 5. Next.js Implementation Guidelines
 
 ### 5.1 Fetching Data
