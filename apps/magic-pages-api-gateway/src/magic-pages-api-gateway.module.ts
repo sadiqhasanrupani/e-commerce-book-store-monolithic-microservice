@@ -14,6 +14,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { BooksModule } from './books/books.module';
 import { UploadModule } from './upload/upload.module';
+import { LocationModule } from './location/location.module';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthenticationGuard } from './auth/guards/authenticate/authenticate.guard';
 import { AccessTokenGuard } from './auth/guards/access-token/access-token.guard';
@@ -22,6 +23,8 @@ import { RoleBaseAccessTokenGuard } from './auth/guards/role-base-access-token/r
 import { PaginationModule } from './common/pagination/pagination.module';
 import { CartModule } from './cart/cart.module';
 import { AgeGroupsModule } from './age-groups/age-groups.module';
+import { CategoriesModule } from './categories/categories.module';
+import { BrowseModule } from './browse/browse.module';
 import { PrometheusModule } from '../../../libs/common/src/metrics';
 import { LoggerModule, RequestIdMiddleware, LoggingInterceptor } from '../../../libs/common/src/logging';
 import { MiddlewareConsumer, RequestMethod, NestModule } from '@nestjs/common';
@@ -43,9 +46,12 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
     AuthModule,
     BooksModule,
     UploadModule,
+    LocationModule,
     PaginationModule,
     CartModule,
     AgeGroupsModule,
+    CategoriesModule,
+    BrowseModule,
   ],
   providers: [
     {
