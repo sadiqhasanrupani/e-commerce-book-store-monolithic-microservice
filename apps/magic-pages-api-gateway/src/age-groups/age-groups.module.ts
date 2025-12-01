@@ -10,11 +10,14 @@ import { AuthModule } from '../auth/auth.module';
 
 import { AgeGroupsAdminController } from './age-groups-admin.controller';
 
+import { UploadModule } from '../upload/upload.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([AgeGroup]),
     BooksModule,
-    AuthModule
+    AuthModule,
+    UploadModule,
   ],
   controllers: [AgeGroupsController, AgesController, AgeGroupsAdminController],
   providers: [AgeGroupsService],

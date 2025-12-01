@@ -1,6 +1,8 @@
-import { Controller, Post, Put, Delete, Body, Param } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import { Controller, Post, Put, Delete, Body, Param, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { ApiOperation, ApiTags, ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AgeGroupsService } from './providers/age-groups.service';
+import { UploadService } from '../upload/providers/upload.service';
 import { Auth } from '../auth/decorator/auth.decorator';
 import { AuthTypes } from '@app/contract/auth/enums/auth-types.enum';
 import { Role } from '../auth/decorator/role.decorator';
@@ -15,14 +17,26 @@ import { BulkDeleteAgeGroupDto } from '@app/contract/age-groups/dtos/bulk-delete
 @ApiBearerAuth()
 @Controller('age-groups')
 export class AgeGroupsAdminController {
-  constructor(private readonly ageGroupsService: AgeGroupsService) { }
+  constructor(
+    private readonly ageGroupsService: AgeGroupsService,
+    private readonly uploadService: UploadService,
+  ) { }
 
   @Auth(AuthTypes.BEARER)
   @Role(RoleTypes.ADMIN)
   @Post()
+  @UseInterceptors(FileInterceptor('heroImage'))
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Create an age group' })
   @ApiBody({ type: CreateAgeGroupDto })
-  async create(@Body() dto: CreateAgeGroupDto) {
+  async create(
+    @Body() dto: CreateAgeGroupDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (file) {
+      const [url] = await this.uploadService.uploadFiles([file]);
+      dto.heroImage = url;
+    }
     return this.ageGroupsService.create(dto);
   }
 
@@ -56,9 +70,19 @@ export class AgeGroupsAdminController {
   @Auth(AuthTypes.BEARER)
   @Role(RoleTypes.ADMIN)
   @Put(':id')
+  @UseInterceptors(FileInterceptor('heroImage'))
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Update an age group' })
   @ApiBody({ type: UpdateAgeGroupDto })
-  async update(@Param('id') id: string, @Body() dto: UpdateAgeGroupDto) {
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateAgeGroupDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (file) {
+      const [url] = await this.uploadService.uploadFiles([file]);
+      dto.heroImage = url;
+    }
     return this.ageGroupsService.update(id, dto);
   }
 
