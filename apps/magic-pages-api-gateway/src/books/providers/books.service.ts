@@ -8,6 +8,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UpdateBookDto } from '@app/contract/books/dtos/update-book.dto';
+import { UserContext } from '../../auth/providers/user-context.service';
+import { BookResponseDto } from '@app/contract/books/dtos/book-response.dto';
+import { BookVariantResponseDto } from '@app/contract/books/dtos/book-variant-response.dto';
 
 import { CreateBookProvider } from './create-book.provider';
 import { UploadBookFilesProvider } from './upload-book-files.provider';
@@ -459,7 +462,7 @@ export class BooksService {
       files?: {
         bookCover?: Express.Multer.File;
         snapshots?: Express.Multer.File[];
-        variantFiles?: Express.Multer.File[]; // index -> variant
+        variantFiles?: Express.Multer.File[];
       };
     }>,
     options?: { concurrency?: number },
@@ -485,26 +488,114 @@ export class BooksService {
     }
   }
 
-  /**
-   * Retrieve all books from the database.
-   *
-   * @returns An array of all Book entities.
-   */
-  async getAllBooks(): Promise<Book[]> {
-    // const allBook = await this.bookRepository.find({});
-    // return allBook;
+  async findAll(
+    queryParams?: FindAllBookQueryParam,
+    options?: { isAdmin?: boolean; userContext?: UserContext },
+  ): Promise<FindAllBookResponse> {
+    const result = await this.findBookProvider.findAll(queryParams, options);
 
-    return Promise.resolve([]);
+    const transformedData = result.data.map((book) =>
+      this.transformBookToResponse(book, options?.userContext),
+    );
+
+    return {
+      message: 'Books retrieved successfully',
+      ...result,
+      data: transformedData,
+    };
   }
 
   /**
    * Retrieve a single book by its ID.
-   *
-   * @param id - The ID of the book to retrieve.
-   * @returns The Book entity if found, otherwise null.
    */
-  async getBookById(id: string): Promise<Book | null> {
-    return await this.bookRepository.findOneBy({ id });
+  async findOne(
+    id: string,
+    opts?: FindOneBookOption & { isAdmin?: boolean; userContext?: UserContext },
+  ): Promise<BookResponseDto> {
+    const book = await this.findBookProvider.findOne(id, opts);
+    return this.transformBookToResponse(book, opts?.userContext);
+  }
+
+  /**
+   * Find related books based on genre.
+   */
+  async findRelated(
+    id: string,
+    options?: { userContext?: UserContext },
+  ): Promise<BookResponseDto[]> {
+    // 1. Get the current book to find its genre
+    const currentBook = await this.findBookProvider.findOne(id);
+
+    if (!currentBook.genre) {
+      return [];
+    }
+
+    // 2. Find other books with the same genre
+    const result = await this.findBookProvider.findAll({
+      genre: currentBook.genre as any, // Type cast if necessary, or ensure BookGenre import
+      limit: 5, // Limit related books
+    });
+
+    // 3. Filter out the current book and transform
+    return result.data
+      .filter((book) => book.id !== id)
+      .map((book) => this.transformBookToResponse(book, options?.userContext));
+  }
+
+  private transformBookToResponse(book: Book, context?: UserContext): BookResponseDto {
+    const currency = context?.currency || 'INR';
+    const locale = context?.locale || 'en-IN';
+
+    const variants: BookVariantResponseDto[] = (book.formats || []).map((variant) => {
+      let priceAmount = variant.price;
+      let priceCurrency = 'INR';
+
+      // Check priceMap for currency-specific price
+      if (variant.priceMap && variant.priceMap[currency]) {
+        priceAmount = variant.priceMap[currency];
+        priceCurrency = currency;
+      }
+
+      // Format display string
+      const display = new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: priceCurrency,
+      }).format(priceAmount);
+
+      return {
+        id: variant.id,
+        format: variant.format,
+        price: {
+          amount: priceAmount,
+          currency: priceCurrency,
+          display,
+        },
+        stockQuantity: variant.stockQuantity,
+        reservedQuantity: variant.reservedQuantity,
+        fileUrl: variant.fileUrl ?? undefined,
+        isbn: variant.isbn ?? undefined,
+      };
+    });
+
+    return {
+      id: book.id,
+      title: book.title,
+      subtitle: book.subtitle ?? undefined,
+      slug: book.slug ?? '',
+      authorName: book.authorName ?? undefined,
+      // publisher: book.publisher, // Missing in entity
+      // publishedDate: book.publishedDate, // Missing in entity
+      publishedDate: book.createdAt, // Fallback
+      description: book.description ?? '',
+      // longDescription: book.longDescription, // Missing in entity
+      coverImageUrl: book.coverImageUrl ?? undefined,
+      snapshotUrls: book.snapshotUrls ?? undefined,
+      rating: 0, // Missing in entity, default to 0
+      isBestseller: book.isBestseller,
+      isFeatured: book.isFeatured,
+      isNewRelease: book.isNewRelease,
+      variants,
+    };
   }
 
   /**
@@ -853,23 +944,7 @@ export class BooksService {
     }
   }
 
-  async findAll(queryParams?: FindAllBookQueryParam): Promise<FindAllBookResponse> {
-    const paginatedBooks = await this.findBookProvider.findAll(queryParams);
 
-    return {
-      message: 'successfully able to find all books',
-      ...paginatedBooks,
-    };
-  }
-
-  async findOne(id: string, options: FindOneBookOption) {
-    const book = await this.findBookProvider.findOne(id, options);
-
-    return {
-      message: 'Desired book got successfully',
-      book,
-    };
-  }
 
   async deleteBook(id: string, options: DeleteOption) {
     const result = await this.deleteBookProvider.deleteBook(id, options);

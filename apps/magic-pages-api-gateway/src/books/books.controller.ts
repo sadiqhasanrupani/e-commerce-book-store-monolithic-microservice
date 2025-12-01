@@ -13,6 +13,8 @@ import {
   HttpCode,
   Get,
   ParseUUIDPipe,
+  Ip,
+  Headers,
 } from '@nestjs/common';
 
 import { BooksService } from './providers/books.service';
@@ -32,11 +34,15 @@ import { Book } from '@app/contract/books/entities/book.entity';
 import { FindAllBookQueryParam, FindAllBookResponse } from '@app/contract/books/types/find-book.type';
 import { Auth } from '../auth/decorator/auth.decorator';
 import { AuthTypes } from '@app/contract/auth/enums/auth-types.enum';
+import { UserContextService } from '../auth/providers/user-context.service';
 
 @ApiTags('Books')
 @Controller('books')
 export class BooksController {
-  constructor(private readonly booksService: BooksService) { }
+  constructor(
+    private readonly booksService: BooksService,
+    private readonly userContextService: UserContextService,
+  ) { }
 
   // ---------------------------------------------------------------------
   // 📌 CREATE BOOK
@@ -193,8 +199,14 @@ export class BooksController {
     status: 200,
     description: 'Paginated book list',
   })
-  async findAll(@Query() query: FindAllBookQueryParam): Promise<FindAllBookResponse> {
-    return this.booksService.findAll(query);
+  async findAll(
+    @Query() query: FindAllBookQueryParam,
+    @Ip() ip: string,
+    @Headers('x-forwarded-for') xForwardedFor: string,
+  ): Promise<FindAllBookResponse> {
+    const clientIp = xForwardedFor ? xForwardedFor.split(',')[0].trim() : ip;
+    const userContext = this.userContextService.resolveContext(clientIp);
+    return this.booksService.findAll(query, { userContext });
   }
 
   // ---------------------------------------------------------------------
@@ -216,8 +228,34 @@ export class BooksController {
   }
 
   // ---------------------------------------------------------------------
+  // 📌 SEARCH BOOKS
+  // ---------------------------------------------------------------------
+  @Auth(AuthTypes.NONE)
+  @Role(RoleTypes.NONE)
+  @Get('search')
+  @ApiOperation({
+    summary: 'Search books with full-text search',
+    description: 'Search books by title, author, or description using full-text search with fuzzy fallback.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Search results with facets',
+  })
+  async search(
+    @Query() query: FindAllBookQueryParam,
+    @Ip() ip: string,
+    @Headers('x-forwarded-for') xForwardedFor: string,
+  ): Promise<FindAllBookResponse> {
+    const clientIp = xForwardedFor ? xForwardedFor.split(',')[0].trim() : ip;
+    const userContext = this.userContextService.resolveContext(clientIp);
+    return this.booksService.findAll(query, { userContext });
+  }
+
+  // ---------------------------------------------------------------------
   // 📌 FIND ONE (PUBLIC)
   // ---------------------------------------------------------------------
+  @Auth(AuthTypes.NONE)
+  @Role(RoleTypes.NONE)
   @Get(':id')
   @ApiOperation({
     summary: 'Get a book by ID (public)',
@@ -227,13 +265,44 @@ export class BooksController {
     type: 'string',
     example: '5ec98e94-3b84-4b70-8727-bff123c1ea92',
   })
-  async findOne(@Param('id', new ParseUUIDPipe()) id: string) {
-    return this.booksService.findOne(id as any, {});
+  async findOne(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Ip() ip: string,
+    @Headers('x-forwarded-for') xForwardedFor: string,
+  ) {
+    const clientIp = xForwardedFor ? xForwardedFor.split(',')[0].trim() : ip;
+    const userContext = this.userContextService.resolveContext(clientIp);
+    return this.booksService.findOne(id as any, { userContext });
+  }
+
+  // ---------------------------------------------------------------------
+  // 📌 RELATED BOOKS
+  // ---------------------------------------------------------------------
+  @Auth(AuthTypes.NONE)
+  @Role(RoleTypes.NONE)
+  @Get(':id/related')
+  @ApiOperation({
+    summary: 'Get related books by ID',
+  })
+  @ApiParam({
+    name: 'id',
+    type: 'string',
+    example: '5ec98e94-3b84-4b70-8727-bff123c1ea92',
+  })
+  async getRelatedBooks(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Ip() ip: string,
+    @Headers('x-forwarded-for') xForwardedFor: string,
+  ) {
+    const clientIp = xForwardedFor ? xForwardedFor.split(',')[0].trim() : ip;
+    const userContext = this.userContextService.resolveContext(clientIp);
+    return this.booksService.findRelated(id, { userContext });
   }
 
   // ---------------------------------------------------------------------
   // 📌 DELETE BOOK
   // ---------------------------------------------------------------------
+  @Role(RoleTypes.ADMIN)
   @Delete(':id')
   @ApiOperation({ summary: 'Delete or archive a book' })
   @ApiParam({

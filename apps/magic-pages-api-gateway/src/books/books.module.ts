@@ -5,6 +5,7 @@ import { ClientsModule } from '@nestjs/microservices';
 import { UploadModule } from '../upload/upload.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PaginationModule } from '../common/pagination/pagination.module';
+import { AuthModule } from '../auth/auth.module';
 
 // controllers
 import { BooksController } from './books.controller';
@@ -34,9 +35,10 @@ import { STORAGE_CONFIG } from '@app/contract/storage/configs/storage.config';
     ClientsModule.register([STORAGE_CONFIG.CLIENTS]),
     TypeOrmModule.forFeature([Book, Author, BookMetric, BookFormatVariant, Category, Tag]),
     PaginationModule,
+    AuthModule,
   ],
   controllers: [BooksController],
   providers: [BooksService, CreateBookProvider, UploadBookFilesProvider, DeleteBookProvider, FindBookProvider],
   exports: [BooksService, TypeOrmModule],
 })
-export class BooksModule {}
+export class BooksModule { }

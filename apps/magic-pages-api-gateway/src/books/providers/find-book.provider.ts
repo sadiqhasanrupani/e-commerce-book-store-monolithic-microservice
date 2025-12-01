@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { validate as uuidValidate } from 'uuid';
 import { PaginationProvider } from '../../common/pagination/providers/pagination.provider';
 import { FindAllBookQueryParam, FindOneBookOption } from '@app/contract/books/types/find-book.type';
 import { Repository, SelectQueryBuilder } from 'typeorm';
@@ -195,9 +196,31 @@ export class FindBookProvider {
 
       // 3. Categories (Many-to-Many)
       if (categories && categories.length > 0) {
-        qb.innerJoin('book.categories', 'cat', 'cat.slug IN (:...categories) OR cat.id IN (:...categories)', {
-          categories,
-        });
+        const categoryIds: string[] = [];
+        const categorySlugs: string[] = [];
+
+        for (const cat of categories) {
+          if (uuidValidate(cat)) {
+            categoryIds.push(cat);
+          } else {
+            categorySlugs.push(cat);
+          }
+        }
+
+        if (categoryIds.length > 0 && categorySlugs.length > 0) {
+          qb.innerJoin('book.categories', 'cat', '(cat.slug IN (:...categorySlugs) OR cat.id IN (:...categoryIds))', {
+            categorySlugs,
+            categoryIds,
+          });
+        } else if (categoryIds.length > 0) {
+          qb.innerJoin('book.categories', 'cat', 'cat.id IN (:...categoryIds)', {
+            categoryIds,
+          });
+        } else if (categorySlugs.length > 0) {
+          qb.innerJoin('book.categories', 'cat', 'cat.slug IN (:...categorySlugs)', {
+            categorySlugs,
+          });
+        }
       }
 
       if (isFeatured !== undefined) {

@@ -28,6 +28,9 @@ export class BookFormatVariant {
   @Column({ type: 'numeric', precision: 10, scale: 2 })
   price: number;
 
+  @Column({ type: 'jsonb', nullable: true })
+  priceMap: Record<string, number>;
+
   /** stock only for physical item*/
   @Column({ type: 'int', default: 0 })
   stockQuantity: number;
