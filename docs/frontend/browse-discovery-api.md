@@ -10,20 +10,70 @@ Fetches aggregated metadata for the Browse Hub page, including age groups, categ
 - **Endpoint:** `GET /browse/metadata`
 - **Auth:** Public (No token required)
 
-**Response:**
+**Response Example:**
 ```json
 {
   "ageGroups": [
-    { "id": "3-5", "label": "Ages 3-5", ... }
+    {
+      "id": "3-5",
+      "label": "Ages 3-5",
+      "description": "Picture books and early learning.",
+      "sortOrder": 2
+    },
+    {
+      "id": "5-7",
+      "label": "Ages 5-7",
+      "description": "Early readers and first chapters.",
+      "sortOrder": 3
+    }
   ],
   "categories": [
-    { "id": "fiction", "name": "Fiction", "slug": "fiction", ... }
+    {
+      "id": "uuid-1",
+      "name": "Fiction",
+      "slug": "fiction",
+      "children": [
+        { "id": "uuid-2", "name": "Adventure", "slug": "adventure" }
+      ]
+    }
   ],
   "formats": [
-    { "id": "PDF", "label": "PDF", ... }
+    {
+      "id": "uuid-f1",
+      "label": "PDF",
+      "description": "Instant digital downloads",
+      "benefit": "Read on any device",
+      "icon": "file-text",
+      "sortOrder": 1
+    },
+    {
+      "id": "uuid-f2",
+      "label": "Physical",
+      "description": "Premium printed books",
+      "benefit": "Doorstep delivery",
+      "icon": "package",
+      "sortOrder": 2
+    }
   ],
   "collections": [
-    { "id": "bestsellers", "title": "Bestsellers", "link": "/search?filter=bestseller", ... }
+    {
+      "id": "uuid-c1",
+      "title": "Bestsellers",
+      "description": "Most loved by families",
+      "link": "/search?filter=bestseller",
+      "icon": "trending-up",
+      "colorTheme": "text-primary",
+      "sortOrder": 1
+    },
+    {
+      "id": "uuid-c2",
+      "title": "New Releases",
+      "description": "Fresh magical stories",
+      "link": "/search?filter=new",
+      "icon": "sparkles",
+      "colorTheme": "text-accent-blue",
+      "sortOrder": 2
+    }
   ]
 }
 ```
@@ -47,8 +97,51 @@ Fetches books filtered by a specific age group.
 - `categories` (string[]): Filter by category slugs.
 - `q` (string): Search query.
 
-**Response:**
-Standard Paginated Book Response.
+**Response Example:**
+```json
+{
+  "message": "Books retrieved successfully",
+  "meta": {
+    "total": 100,
+    "totalPages": 10,
+    "page": 1,
+    "limit": 10,
+    "hasNextPage": true,
+    "hasPreviousPage": false
+  },
+  "data": [
+    {
+      "id": "book-uuid-1",
+      "title": "The Magic Forest",
+      "authorName": "Jane Doe",
+      "genre": "fantasy",
+      "description": "A wonderful journey...",
+      "isNewRelease": true,
+      "slug": "the-magic-forest",
+      "coverImageUrl": "https://example.com/cover.jpg",
+      "isBestseller": false,
+      "isFeatured": true,
+      "variants": [
+        {
+          "id": 1,
+          "format": "PDF",
+          "price": {
+            "amount": 9.99,
+            "currency": "USD",
+            "display": "$9.99"
+          },
+          "stockQuantity": 100
+        }
+      ]
+    }
+  ],
+  "facets": {
+    "ageGroups": [{ "id": "3-5", "count": 50 }],
+    "categories": [{ "id": "cat-1", "name": "Fiction", "count": 30 }],
+    "formats": [{ "id": "PDF", "count": 80 }]
+  }
+}
+```
 
 ## 3. Browse by Category
 
@@ -60,13 +153,19 @@ Fetches details for a specific category.
 - **Path Params:**
   - `slug`: The slug of the category (e.g., `fiction`).
 
-**Response:**
+**Response Example:**
 ```json
 {
-  "id": "...",
+  "id": "cat-uuid-1",
   "name": "Fiction",
   "slug": "fiction",
-  "children": [...]
+  "children": [
+    {
+      "id": "cat-uuid-2",
+      "name": "Adventure",
+      "slug": "adventure"
+    }
+  ]
 }
 ```
 
@@ -80,6 +179,9 @@ Fetches books filtered by a specific category.
 
 **Query Parameters:**
 Same as "Get Books by Age Group".
+
+**Response Example:**
+Same structure as `GET /ages/:ageGroup/books`.
 
 ## 4. Search & Filtering
 
@@ -99,5 +201,5 @@ General search endpoint for books.
 - `genre` (string): Filter by genre (enum).
 - `formats` (string[]): Filter by formats.
 
-**Response:**
-Standard Paginated Book Response.
+**Response Example:**
+Same structure as `GET /ages/:ageGroup/books`.
