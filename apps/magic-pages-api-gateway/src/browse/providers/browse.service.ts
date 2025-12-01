@@ -1,80 +1,29 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { AgeGroupsService } from '../../age-groups/providers/age-groups.service';
 import { CategoriesService } from '../../categories/providers/categories.service';
+import { BrowseFormat } from '@app/contract/browse/entities/browse-format.entity';
+import { BrowseCollection } from '@app/contract/browse/entities/browse-collection.entity';
 
 @Injectable()
 export class BrowseService {
   constructor(
     private readonly ageGroupsService: AgeGroupsService,
     private readonly categoriesService: CategoriesService,
+    @InjectRepository(BrowseFormat)
+    private readonly formatRepository: Repository<BrowseFormat>,
+    @InjectRepository(BrowseCollection)
+    private readonly collectionRepository: Repository<BrowseCollection>,
   ) { }
 
   async getMetadata() {
-    const [ageGroups, categories] = await Promise.all([
+    const [ageGroups, categories, formats, collections] = await Promise.all([
       this.ageGroupsService.findAll(),
       this.categoriesService.findAll(),
+      this.formatRepository.find({ order: { sortOrder: 'ASC' } }),
+      this.collectionRepository.find({ order: { sortOrder: 'ASC' } }),
     ]);
-
-    // Hardcoded formats as per RFC
-    const formats = [
-      {
-        id: "PDF",
-        label: "PDF",
-        description: "Instant digital downloads",
-        benefit: "Read on any device",
-        icon: "file-text"
-      },
-      {
-        id: "PHYSICAL",
-        label: "Physical",
-        description: "Premium printed books",
-        benefit: "Doorstep delivery",
-        icon: "package"
-      },
-      {
-        id: "WORKSHEETS",
-        label: "Worksheets",
-        description: "Practice & activities",
-        benefit: "Print & practice",
-        icon: "layers"
-      }
-    ];
-
-    // Hardcoded collections as per RFC
-    const collections = [
-      {
-        id: "bestsellers",
-        title: "Bestsellers",
-        description: "Most loved by families",
-        link: "/search?filter=bestseller",
-        icon: "trending-up",
-        colorTheme: "text-primary"
-      },
-      {
-        id: "new-releases",
-        title: "New Releases",
-        description: "Fresh magical stories",
-        link: "/search?filter=new",
-        icon: "sparkles",
-        colorTheme: "text-accent-blue"
-      },
-      {
-        id: "award-winners",
-        title: "Award Winners",
-        description: "Critically acclaimed books",
-        link: "/search?filter=awards",
-        icon: "award",
-        colorTheme: "text-mint"
-      },
-      {
-        id: "editors-picks",
-        title: "Editor's Picks",
-        description: "Handpicked favorites",
-        link: "/search?filter=featured",
-        icon: "heart",
-        colorTheme: "text-warm-peach"
-      }
-    ];
 
     return {
       ageGroups,
@@ -82,5 +31,45 @@ export class BrowseService {
       formats,
       collections,
     };
+  }
+
+  // --- Admin CRUD for Formats ---
+
+  async createFormat(data: Partial<BrowseFormat>) {
+    const format = this.formatRepository.create(data);
+    return this.formatRepository.save(format);
+  }
+
+  async updateFormat(id: string, data: Partial<BrowseFormat>) {
+    const format = await this.formatRepository.findOneBy({ id });
+    if (!format) throw new NotFoundException('Format not found');
+    Object.assign(format, data);
+    return this.formatRepository.save(format);
+  }
+
+  async deleteFormat(id: string) {
+    const result = await this.formatRepository.delete(id);
+    if (result.affected === 0) throw new NotFoundException('Format not found');
+    return { message: 'Format deleted successfully' };
+  }
+
+  // --- Admin CRUD for Collections ---
+
+  async createCollection(data: Partial<BrowseCollection>) {
+    const collection = this.collectionRepository.create(data);
+    return this.collectionRepository.save(collection);
+  }
+
+  async updateCollection(id: string, data: Partial<BrowseCollection>) {
+    const collection = await this.collectionRepository.findOneBy({ id });
+    if (!collection) throw new NotFoundException('Collection not found');
+    Object.assign(collection, data);
+    return this.collectionRepository.save(collection);
+  }
+
+  async deleteCollection(id: string) {
+    const result = await this.collectionRepository.delete(id);
+    if (result.affected === 0) throw new NotFoundException('Collection not found');
+    return { message: 'Collection deleted successfully' };
   }
 }
