@@ -174,6 +174,9 @@ export class CartService {
   /**
    * Update cart item quantity
    */
+  /**
+   * Update cart item quantity
+   */
   async updateCartItem(userId: number, itemId: string, dto: UpdateCartItemDto): Promise<CartResponseDto> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -196,7 +199,8 @@ export class CartService {
       }
 
       const oldQty = cartItem.qty;
-      const qtyDelta = dto.qty - oldQty;
+      const newQty = dto.qty;
+      const qtyDelta = newQty - oldQty;
 
       // Lock variant row
       const variant = await queryRunner.manager
@@ -211,34 +215,63 @@ export class CartService {
 
       const isPhysical = isPhysicalFormat(variant.format);
 
-      if (isPhysical && qtyDelta > 0) {
-        // Increasing quantity - need to reserve more
-        const availableStock = variant.stockQuantity - variant.reservedQuantity;
-        if (availableStock < qtyDelta) {
-          throw new ConflictException({
-            message: 'Insufficient stock',
-            code: 'INSUFFICIENT_STOCK',
-            available: availableStock,
-            requested: qtyDelta,
-          });
-        }
+      if (isPhysical) {
+        if (!cartItem.isStockReserved) {
+          // Case 1: Reservation expired. We need to re-reserve the FULL new quantity.
+          const availableStock = variant.stockQuantity - variant.reservedQuantity;
 
-        await queryRunner.manager.update(
-          BookFormatVariant,
-          { id: variant.id },
-          { reservedQuantity: () => `reserved_quantity + ${qtyDelta}` },
-        );
-      } else if (isPhysical && qtyDelta < 0) {
-        // Decreasing quantity - release reservation
-        await queryRunner.manager.update(
-          BookFormatVariant,
-          { id: variant.id },
-          { reservedQuantity: () => `reserved_quantity - ${Math.abs(qtyDelta)}` },
-        );
+          if (availableStock < newQty) {
+            throw new ConflictException({
+              message: 'Insufficient stock to re-reserve item',
+              code: 'INSUFFICIENT_STOCK',
+              available: availableStock,
+              requested: newQty,
+            });
+          }
+
+          // Reserve full amount
+          await queryRunner.manager.update(
+            BookFormatVariant,
+            { id: variant.id },
+            { reservedQuantity: () => `reservedQuantity + ${newQty}` },
+          );
+
+          // Mark as reserved
+          cartItem.isStockReserved = true;
+
+        } else {
+          // Case 2: Reservation active. Handle delta.
+          if (qtyDelta > 0) {
+            // Increasing quantity
+            const availableStock = variant.stockQuantity - variant.reservedQuantity;
+            if (availableStock < qtyDelta) {
+              throw new ConflictException({
+                message: 'Insufficient stock',
+                code: 'INSUFFICIENT_STOCK',
+                available: availableStock,
+                requested: qtyDelta,
+              });
+            }
+
+            await queryRunner.manager.update(
+              BookFormatVariant,
+              { id: variant.id },
+              { reservedQuantity: () => `reservedQuantity + ${qtyDelta}` },
+            );
+          } else if (qtyDelta < 0) {
+            // Decreasing quantity
+            await queryRunner.manager.update(
+              BookFormatVariant,
+              { id: variant.id },
+              { reservedQuantity: () => `reservedQuantity - ${Math.abs(qtyDelta)}` },
+            );
+          }
+        }
       }
 
       // Update cart item
       cartItem.qty = dto.qty;
+      // Ensure we save the isStockReserved change if any
       await queryRunner.manager.save(cartItem);
 
       await queryRunner.commitTransaction();
@@ -286,18 +319,18 @@ export class CartService {
         throw new ForbiddenException('You do not have access to this cart item');
       }
 
-      // Release reservation if physical
+      // Release reservation if physical AND reserved
       const variant = cartItem.bookFormatVariant;
       if (!variant) {
         throw new NotFoundException(`Variant not found`);
       }
       const isPhysical = isPhysicalFormat(variant.format);
 
-      if (isPhysical) {
+      if (isPhysical && cartItem.isStockReserved) {
         await queryRunner.manager.update(
           BookFormatVariant,
           { id: variant.id },
-          { reservedQuantity: () => `reserved_quantity - ${cartItem.qty}` },
+          { reservedQuantity: () => `reservedQuantity - ${cartItem.qty}` },
         );
 
         // Remove Redis reservation
@@ -339,11 +372,11 @@ export class CartService {
       // Release all reservations
       for (const item of cart.items) {
         const isPhysical = isPhysicalFormat(item.bookFormatVariant.format);
-        if (isPhysical) {
+        if (isPhysical && item.isStockReserved) {
           await queryRunner.manager.update(
             BookFormatVariant,
             { id: item.bookFormatVariantId },
-            { reservedQuantity: () => `reserved_quantity - ${item.qty}` },
+            { reservedQuantity: () => `reservedQuantity - ${item.qty}` },
           );
 
           const reservationKey = `cart_reservation:${cart.id}:${item.bookFormatVariantId}`;

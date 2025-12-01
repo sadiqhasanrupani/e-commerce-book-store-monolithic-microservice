@@ -93,27 +93,40 @@ export class CheckoutService {
         }
 
         if (isPhysicalFormat(lockedVariant.format)) {
-          // Check available stock (stock - reserved)
-          // Note: Since we are in checkout, we might have already reserved stock in add-to-cart
-          // But we need to verify if we can fulfill this order finally
-          // Actually, add-to-cart increments reservedQuantity.
-          // So available = stockQuantity - reservedQuantity + (our reserved quantity for this cart)
-          // But simpler check: stockQuantity >= reservedQuantity (which should hold true)
-          // And we are about to decrement stockQuantity.
+          // JIT Validation & Re-reservation
+          if (!cartItem.isStockReserved) {
+            // Item is in cart but reservation expired. Check if we can re-reserve.
+            const availableStock = lockedVariant.stockQuantity - lockedVariant.reservedQuantity;
 
-          // Wait, if we reserved it, it's in reservedQuantity.
-          // When we sell, we decrement stockQuantity AND reservedQuantity.
+            if (availableStock < cartItem.qty) {
+              throw new ConflictException({
+                code: CartErrorCode.INSUFFICIENT_STOCK,
+                message: `Insufficient stock for ${cartItem.title}`,
+                details: {
+                  variantId: variant.id,
+                  requested: cartItem.qty,
+                  available: availableStock,
+                },
+              });
+            }
 
-          if (lockedVariant.stockQuantity < cartItem.qty) {
-            throw new ConflictException({
-              code: CartErrorCode.INSUFFICIENT_STOCK,
-              message: `Insufficient stock for ${cartItem.title}`,
-              details: {
-                variantId: variant.id,
-                requested: cartItem.qty,
-                available: lockedVariant.stockQuantity, // This is total physical stock
-              },
-            });
+            // Re-reserve stock (JIT)
+            // We increment reservedQuantity now, so that the final decrement step works correctly
+            await queryRunner.manager.increment(BookFormatVariant, { id: variant.id }, 'reservedQuantity', cartItem.qty);
+
+            // Log this event?
+            this.logger.log(`JIT Re-reservation successful for item ${cartItem.id} (Qty: ${cartItem.qty})`);
+          } else {
+            // Already reserved. Sanity check.
+            // If reserved, then stockQuantity must be >= qty (unless DB is inconsistent)
+            if (lockedVariant.stockQuantity < cartItem.qty) {
+              // This implies physical stock is missing even though reserved.
+              // Could happen if inventory check was bypassed or manual adjustment happened.
+              throw new ConflictException({
+                code: CartErrorCode.INSUFFICIENT_STOCK,
+                message: `Inventory inconsistency for ${cartItem.title}`,
+              });
+            }
           }
         }
 

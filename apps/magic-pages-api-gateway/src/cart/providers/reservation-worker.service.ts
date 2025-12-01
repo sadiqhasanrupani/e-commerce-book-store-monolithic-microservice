@@ -27,33 +27,42 @@ export class ReservationWorkerService implements ICartCleanupStrategy {
     @InjectRepository(BookFormatVariant)
     private readonly variantRepository: Repository<BookFormatVariant>,
     private readonly dataSource: DataSource,
-  ) {}
+  ) { }
 
+  /**
+   * Process completed and abandoned carts
+   * Archive cart data and release reservations
+   */
   /**
    * Process completed and abandoned carts
    * Archive cart data and release reservations
    */
   @Cron(CronExpression.EVERY_5_MINUTES)
   async processCompletedCarts() {
-    this.logger.log('Starting cart cleanup for COMPLETED/ABANDONED carts...');
+    this.logger.log('Starting cart cleanup...');
 
+    await this.archiveCompletedCarts();
+    await this.releaseExpiredReservations();
+  }
+
+  /**
+   * Archive carts that are COMPLETED or ABANDONED
+   */
+  private async archiveCompletedCarts() {
     try {
-      // Find carts with COMPLETED or ABANDONED status
       const cartsToProcess = await this.cartRepository.find({
         where: {
           status: In([CartStatus.COMPLETED, CartStatus.ABANDONED]),
         },
         relations: ['items', 'items.bookFormatVariant'],
-        take: 100, // Process in batches
+        take: 100,
       });
 
       if (cartsToProcess.length === 0) {
-        this.logger.log('No carts to process.');
         return;
       }
 
-      let archivedCount = 0;
-      let releasedCount = 0;
+      this.logger.log(`Archiving ${cartsToProcess.length} completed/abandoned carts...`);
 
       for (const cart of cartsToProcess) {
         const queryRunner = this.dataSource.createQueryRunner();
@@ -86,18 +95,20 @@ export class ReservationWorkerService implements ICartCleanupStrategy {
             ],
           );
 
-          // Release reservations for abandoned carts only
+          // Release reservations for abandoned carts only (if not already released)
           if (cart.status === CartStatus.ABANDONED) {
             for (const item of cart.items) {
-              const variant = item.bookFormatVariant;
-              if (variant && isPhysicalFormat(variant.format) && item.qty > 0) {
-                await queryRunner.manager.update(
-                  BookFormatVariant,
-                  { id: variant.id },
-                  { reservedQuantity: () => `reserved_quantity - ${item.qty}` },
-                );
-                releasedCount++;
-                this.logger.log(`Released ${item.qty} units of variant ${variant.id} from abandoned cart ${cart.id}`);
+              // Only release if it was reserved
+              if (item.isStockReserved) {
+                const variant = item.bookFormatVariant;
+                if (variant && isPhysicalFormat(variant.format) && item.qty > 0) {
+                  await queryRunner.manager.update(
+                    BookFormatVariant,
+                    { id: variant.id },
+                    { reservedQuantity: () => `"reservedQuantity" - ${item.qty}` },
+                  );
+                  this.logger.log(`Released ${item.qty} units of variant ${variant.id} from abandoned cart ${cart.id}`);
+                }
               }
             }
           }
@@ -109,7 +120,6 @@ export class ReservationWorkerService implements ICartCleanupStrategy {
           await queryRunner.manager.delete(Cart, { id: cart.id });
 
           await queryRunner.commitTransaction();
-          archivedCount++;
         } catch (error) {
           await queryRunner.rollbackTransaction();
           this.logger.error(`Error processing cart ${cart.id}`, error);
@@ -117,10 +127,79 @@ export class ReservationWorkerService implements ICartCleanupStrategy {
           await queryRunner.release();
         }
       }
-
-      this.logger.log(`Cart cleanup completed. Archived: ${archivedCount}, Reservations released: ${releasedCount}`);
     } catch (error) {
-      this.logger.error('Error during cart cleanup', error);
+      this.logger.error('Error during cart archiving', error);
+    }
+  }
+
+  /**
+   * Release reservations for items in active carts that have expired
+   */
+  private async releaseExpiredReservations() {
+    try {
+      // 15 minutes expiration
+      const expirationTime = new Date(Date.now() - 15 * 60 * 1000);
+
+      // Find items that are reserved but belong to carts inactive for > 15 mins
+      // We need to join with cart to check updatedAt
+      const itemsToRelease = await this.cartItemRepository
+        .createQueryBuilder('item')
+        .innerJoinAndSelect('item.cart', 'cart')
+        .innerJoinAndSelect('item.bookFormatVariant', 'variant')
+        .where('item.isStockReserved = :isReserved', { isReserved: true })
+        .andWhere('cart.updatedAt < :expirationTime', { expirationTime })
+        .andWhere('cart.status = :status', { status: CartStatus.ACTIVE })
+        .take(100) // Batch processing
+        .getMany();
+
+      if (itemsToRelease.length === 0) {
+        return;
+      }
+
+      this.logger.log(`Found ${itemsToRelease.length} expired reservations to release.`);
+
+      for (const item of itemsToRelease) {
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+
+        try {
+          const variant = item.bookFormatVariant;
+          if (variant && isPhysicalFormat(variant.format) && item.qty > 0) {
+            // Decrement reserved quantity
+            await queryRunner.manager.update(
+              BookFormatVariant,
+              { id: variant.id },
+              { reservedQuantity: () => `"reservedQuantity" - ${item.qty}` },
+            );
+
+            // Mark item as not reserved
+            await queryRunner.manager.update(
+              CartItem,
+              { id: item.id },
+              { isStockReserved: false },
+            );
+
+            this.logger.log(`Silent release: Released ${item.qty} units of variant ${variant.id} from active cart ${item.cartId}`);
+          } else {
+            // If not physical or invalid, just mark as unreserved to stop picking it up
+            await queryRunner.manager.update(
+              CartItem,
+              { id: item.id },
+              { isStockReserved: false },
+            );
+          }
+
+          await queryRunner.commitTransaction();
+        } catch (error) {
+          await queryRunner.rollbackTransaction();
+          this.logger.error(`Error releasing reservation for item ${item.id}`, error);
+        } finally {
+          await queryRunner.release();
+        }
+      }
+    } catch (error) {
+      this.logger.error('Error during expired reservation release', error);
     }
   }
 

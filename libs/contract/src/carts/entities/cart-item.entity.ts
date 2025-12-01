@@ -39,6 +39,9 @@ export class CartItem {
   @Column({ type: 'numeric', precision: 10, scale: 2, name: 'unit_price' })
   unitPrice: number;
 
+  @Column({ default: true, name: 'is_stock_reserved' })
+  isStockReserved: boolean;
+
   // Snapshot fields
   @Column({ length: 255, nullable: true })
   title: string;
