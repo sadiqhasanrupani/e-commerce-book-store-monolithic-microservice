@@ -6,13 +6,17 @@ import { AgeGroupsService } from './providers/age-groups.service';
 
 import { BooksModule } from '../books/books.module';
 import { AgesController } from './ages.controller';
+import { AuthModule } from '../auth/auth.module';
+
+import { AgeGroupsAdminController } from './age-groups-admin.controller';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([AgeGroup]),
     BooksModule,
+    AuthModule
   ],
-  controllers: [AgeGroupsController, AgesController],
+  controllers: [AgeGroupsController, AgesController, AgeGroupsAdminController],
   providers: [AgeGroupsService],
   exports: [AgeGroupsService],
 })
