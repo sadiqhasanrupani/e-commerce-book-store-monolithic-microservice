@@ -7,6 +7,9 @@ import { Role } from '../auth/decorator/role.decorator';
 import { RoleTypes } from '@app/contract/auth/enums/role-types.enum';
 import { CreateCategoryDto } from '@app/contract/categories/dtos/create-category.dto';
 import { UpdateCategoryDto } from '@app/contract/categories/dtos/update-category.dto';
+import { BulkCreateCategoryDto } from '@app/contract/categories/dtos/bulk-create-category.dto';
+import { BulkUpdateCategoryDto } from '@app/contract/categories/dtos/bulk-update-category.dto';
+import { BulkDeleteCategoryDto } from '@app/contract/categories/dtos/bulk-delete-category.dto';
 
 @ApiTags('Categories Admin')
 @ApiBearerAuth()
@@ -21,6 +24,33 @@ export class CategoriesAdminController {
   @ApiBody({ type: CreateCategoryDto })
   async create(@Body() createCategoryDto: CreateCategoryDto) {
     return this.categoriesService.create(createCategoryDto);
+  }
+
+  @Auth(AuthTypes.BEARER)
+  @Role(RoleTypes.ADMIN)
+  @Post('bulk')
+  @ApiOperation({ summary: 'Bulk create categories' })
+  @ApiBody({ type: BulkCreateCategoryDto })
+  async bulkCreate(@Body() dto: BulkCreateCategoryDto) {
+    return this.categoriesService.bulkCreate(dto);
+  }
+
+  @Auth(AuthTypes.BEARER)
+  @Role(RoleTypes.ADMIN)
+  @Put('bulk')
+  @ApiOperation({ summary: 'Bulk update categories' })
+  @ApiBody({ type: BulkUpdateCategoryDto })
+  async bulkUpdate(@Body() dto: BulkUpdateCategoryDto) {
+    return this.categoriesService.bulkUpdate(dto);
+  }
+
+  @Auth(AuthTypes.BEARER)
+  @Role(RoleTypes.ADMIN)
+  @Delete('bulk')
+  @ApiOperation({ summary: 'Bulk delete categories' })
+  @ApiBody({ type: BulkDeleteCategoryDto })
+  async bulkDelete(@Body() dto: BulkDeleteCategoryDto) {
+    return this.categoriesService.bulkDelete(dto);
   }
 
   @Auth(AuthTypes.BEARER)
