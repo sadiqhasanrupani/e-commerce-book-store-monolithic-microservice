@@ -25,6 +25,7 @@ import { CartModule } from './cart/cart.module';
 import { AgeGroupsModule } from './age-groups/age-groups.module';
 import { CategoriesModule } from './categories/categories.module';
 import { BrowseModule } from './browse/browse.module';
+import { BookAgeGroupsModule } from './book-age-groups/book-age-groups.module';
 import { PrometheusModule } from '../../../libs/common/src/metrics';
 import { LoggerModule, RequestIdMiddleware, LoggingInterceptor } from '../../../libs/common/src/logging';
 import { MiddlewareConsumer, RequestMethod, NestModule } from '@nestjs/common';
@@ -52,6 +53,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
     AgeGroupsModule,
     CategoriesModule,
     BrowseModule,
+    BookAgeGroupsModule,
   ],
   providers: [
     {

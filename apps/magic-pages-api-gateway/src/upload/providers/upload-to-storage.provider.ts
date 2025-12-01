@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException, InternalServerErrorException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import path from 'path';
+import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { S3Client, PutObjectCommand, PutObjectCommandInput, HeadBucketCommand, CreateBucketCommand } from '@aws-sdk/client-s3';
 
@@ -73,25 +73,29 @@ export class UploadToStorageProvider implements OnModuleInit {
    * Upload a single file to S3-compatible storage
    */
   async uploadFile(file: Express.Multer.File, type: UploadType = 'other'): Promise<string> {
-    if (!file) throw new BadRequestException('File is required');
-
-    if (!this.bucketName || !this.configService.get<string>('s3.storageAccessKey')) {
-      throw new InternalServerErrorException('Storage configuration is missing. Please check STORAGE_BUCKET, STORAGE_ACCESS_KEY, and STORAGE_SECRET_KEY.');
-    }
-
-    this.validateFileType(file, type);
-
-    const fileName = this.generateFileName(file, type);
-    const uploadParams: PutObjectCommandInput = {
-      Bucket: this.bucketName,
-      Key: fileName,
-      Body: file.buffer,
-      ContentType: file.mimetype,
-      ACL: 'public-read',
-    };
-
     try {
+      if (!file) throw new BadRequestException('File is required');
+
+      if (!this.bucketName || !this.configService.get<string>('s3.storageAccessKey')) {
+        throw new InternalServerErrorException('Storage configuration is missing. Please check STORAGE_BUCKET, STORAGE_ACCESS_KEY, and STORAGE_SECRET_KEY.');
+      }
+
+      this.validateFileType(file, type);
+
+      const fileName = this.generateFileName(file, type);
+
+      this.logger.debug(`File details: originalname=${file.originalname}, mimetype=${file.mimetype}, size=${file.size}, bufferLength=${file.buffer?.length}`);
+
+      const uploadParams: PutObjectCommandInput = {
+        Bucket: this.bucketName,
+        Key: fileName,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+        ACL: 'public-read',
+      };
+
       this.logger.log(`Uploading file: ${file.originalname} as ${fileName}`);
+      this.logger.debug(`Upload params: Bucket=${this.bucketName}, Key=${fileName}, ContentType=${file.mimetype}, ACL=${uploadParams.ACL}`);
 
       const result = await this.s3.send(new PutObjectCommand(uploadParams));
       this.logger.debug(`S3 upload result: ${JSON.stringify(result)}`);
@@ -104,8 +108,8 @@ export class UploadToStorageProvider implements OnModuleInit {
       this.logger.log(`✅ Successfully uploaded: ${url}`);
       return url;
     } catch (err) {
-      this.logS3Error(err, file.originalname);
-      throw err;
+      this.logger.error(`Error in uploadFile: ${err.message}`, err.stack);
+      throw new InternalServerErrorException(`S3 Upload Failed: ${err.message} (Code: ${err.Code || 'Unknown'})`);
     }
   }
 
