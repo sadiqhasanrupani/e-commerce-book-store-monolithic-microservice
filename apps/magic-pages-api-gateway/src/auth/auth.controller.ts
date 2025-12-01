@@ -1,5 +1,6 @@
-import { Controller, Post, Body, Res, HttpStatus, Get } from '@nestjs/common';
-import { Response } from 'express';
+
+import { Controller, Post, Body, Res, HttpStatus, Get, Ip, Headers } from '@nestjs/common';
+import { Response, Request } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
 
@@ -19,11 +20,19 @@ import { VerifyLoginOtpDto } from '@app/contract/auth/dtos/verify-login-otp.dto'
 import { MeResponseDto } from '@app/contract/users/dtos/me-response.dto';
 import { ActiveUser } from './decorator/active-user.decorator';
 import { IActiveUser } from '@app/contract/auth/interfaces/active-user.interface';
+// import { GoogleAuthenticationService } from './providers/google-authentication.service';
+import { UserContextService } from './providers/user-context.service';
+// import { GoogleTokenDto } from './dtos/google-token.dto';
+// import { RefreshTokenDto } from './dtos/refresh-token.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { } // eslint-disable-line
+  constructor(
+    private readonly authService: AuthService,
+    // private readonly googleAuthService: GoogleAuthenticationService,
+    private readonly userContextService: UserContextService,
+  ) { } // eslint-disable-line
 
   @Auth(AuthTypes.NONE)
   @Role(RoleTypes.NONE)
@@ -53,6 +62,27 @@ export class AuthController {
   @Post('sign-in')
   login(@Body() signinDto: SignInDto) {
     return this.authService.authenticate(signinDto);
+  }
+
+  /*
+  @Auth(AuthTypes.NONE)
+  @ApiOperation({ summary: 'Sign in with Google token' })
+  @ApiResponse({ status: 201, description: 'User authenticated with Google and tokens issued.' })
+  @ApiResponse({ status: 401, description: 'Invalid Google token.' })
+  @Post('google')
+  async googleAuth(@Body() googleTokenDto: GoogleTokenDto) {
+    // return this.googleAuthService.authenticate(googleTokenDto);
+    return null;
+  }
+  */
+
+  @Get('user/context')
+  @Auth(AuthTypes.NONE)
+  @Role(RoleTypes.NONE)
+  getUserContext(@Ip() ip: string, @Headers('x-forwarded-for') xForwardedFor: string) {
+    // Prefer X-Forwarded-For if available (behind proxy/LB)
+    const clientIp = xForwardedFor ? xForwardedFor.split(',')[0].trim() : ip;
+    return this.userContextService.resolveContext(clientIp);
   }
 
   @Auth(AuthTypes.NONE)
