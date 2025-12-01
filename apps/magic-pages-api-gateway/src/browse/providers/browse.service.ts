@@ -30,7 +30,7 @@ export class BrowseService {
   async getMetadata() {
     const [ageGroups, categories, formats, collections] = await Promise.all([
       this.ageGroupsService.findAll(),
-      this.categoriesService.findAll(),
+      this.categoriesService.findAll({}),
       this.formatRepository.find({ order: { sortOrder: 'ASC' } }),
       this.collectionRepository.find({ order: { sortOrder: 'ASC' } }),
     ]);
