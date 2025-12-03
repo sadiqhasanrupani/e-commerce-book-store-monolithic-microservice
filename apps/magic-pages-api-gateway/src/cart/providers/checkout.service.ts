@@ -9,10 +9,13 @@ import { OrderItem } from '@app/contract/orders/entities/order-item.entity';
 import { BookFormatVariant } from '@app/contract/books/entities/book-format-varient.entity';
 import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { CheckoutDto } from '@app/contract/carts/dtos/checkout.dto';
-import { IPaymentProvider, PaymentInitiationResponse } from '../interfaces/payment-provider.interface';
+import { IPaymentProvider, PaymentInitiationResponse, PaymentProvider } from '../interfaces/payment-provider.interface';
 import { isPhysicalFormat } from '@app/contract/books/enums/book-format.enum';
 import { CartErrorCode } from '@app/contract/carts/enums/cart-error-code.enum';
 import { CartMetricsService } from '../metrics/cart-metrics.service';
+import { PhonePeProvider } from './phonepe.provider';
+import { RazorpayProvider } from './razorpay.provider';
+import { Transaction, TransactionStatus } from '@app/contract/orders/entities/transaction.entity';
 
 @Injectable()
 export class CheckoutService {
@@ -27,9 +30,11 @@ export class CheckoutService {
     private readonly orderItemRepository: Repository<OrderItem>,
     @InjectRepository(BookFormatVariant)
     private readonly variantRepository: Repository<BookFormatVariant>,
+    @InjectRepository(Transaction)
+    private readonly transactionRepository: Repository<Transaction>,
     private readonly dataSource: DataSource,
-    @Inject('PAYMENT_PROVIDER')
-    private readonly paymentProvider: IPaymentProvider,
+    private readonly phonePeProvider: PhonePeProvider,
+    private readonly razorpayProvider: RazorpayProvider,
     private readonly metricsService: CartMetricsService,
   ) { }
 
@@ -177,14 +182,50 @@ export class CheckoutService {
 
       // 7. Initiate Payment (Outside DB transaction to avoid long locks)
       try {
-        const paymentResponse = await this.paymentProvider.initiatePayment({
-          orderId: savedOrder.id.toString(),
+        // Determine Provider
+        // Logic: INR -> PhonePe, Others -> Razorpay
+        // We can also check user preference or other rules here
+
+        // For now, hardcoded rule:
+        const currency = 'INR'; // Assuming INR for now as cart doesn't seem to have currency yet. TODO: Get from cart/user context
+
+        let provider: IPaymentProvider;
+        let providerEnum: PaymentProvider;
+
+        if (currency === 'INR') {
+          provider = this.phonePeProvider;
+          providerEnum = PaymentProvider.PHONEPE;
+        } else {
+          provider = this.razorpayProvider;
+          providerEnum = PaymentProvider.RAZORPAY;
+        }
+
+        // Create Transaction Record
+        const transaction = new Transaction();
+        transaction.order = savedOrder;
+        transaction.amount = totalAmount;
+        transaction.currency = currency;
+        transaction.status = TransactionStatus.PENDING;
+        transaction.provider = providerEnum;
+
+        // Save transaction first to get ID (if needed, though UUID is generated)
+        const savedTransaction = await this.transactionRepository.save(transaction);
+
+        const paymentResponse = await provider.initiatePayment({
+          orderId: savedTransaction.id, // Use Transaction UUID for uniqueness and retry support
           amount: totalAmount,
-          currency: 'INR',
+          currency: currency,
           customerPhone: dto.shippingAddress.phone,
-          callbackUrl: `${process.env.APP_URL}/cart/webhook/payment`, // TODO: Config
-          metadata: { userId, cartId: cart.id },
+          callbackUrl: `${process.env.APP_URL}/cart/webhook/payment`, // Backend Webhook
+          redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/return?orderId=${savedOrder.id}`, // Frontend Return Page
+          metadata: { userId, cartId: cart.id, transactionId: savedTransaction.id },
         });
+
+        // Update transaction with gateway ref id and raw request/response if available
+        // The provider might return transactionId which is the gateway's ID
+        savedTransaction.gateway_ref_id = paymentResponse.transactionId;
+        savedTransaction.raw_response = paymentResponse;
+        await this.transactionRepository.save(savedTransaction);
 
         this.metricsService.incrementCheckoutRequest('success');
         this.metricsService.observeCheckoutDuration((Date.now() - startTime) / 1000);

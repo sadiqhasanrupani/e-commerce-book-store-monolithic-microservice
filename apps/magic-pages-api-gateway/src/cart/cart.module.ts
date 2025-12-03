@@ -5,6 +5,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { CartController } from './cart.controller';
 import { PaymentWebhookController } from './payment-webhook.controller';
+import { TransactionsController } from './transactions.controller';
 import { CartService } from './providers/cart.service';
 import { ReservationWorkerService } from './providers/reservation-worker.service';
 import { Cart } from '@app/contract/carts/entities/cart.entity';
@@ -13,21 +14,23 @@ import { BookFormatVariant } from '@app/contract/books/entities/book-format-vari
 import { Book } from '@app/contract/books/entities/book.entity';
 import { RedisModule } from '@app/redis';
 import { ConfigService } from '@nestjs/config';
-import { ICartCleanupStrategy } from './interfaces/cart-cleanup-strategy.interface';
 import { TracingInterceptor } from './interceptors/tracing.interceptor';
 import { CheckoutService } from './providers/checkout.service';
 import { PhonePeProvider } from './providers/phonepe.provider';
-import { GooglePayProvider } from './providers/googlepay.provider';
+import { RazorpayProvider } from './providers/razorpay.provider';
 import { Order } from '@app/contract/orders/entities/order.entity';
 import { OrderItem } from '@app/contract/orders/entities/order-item.entity';
 import { OrderStatusLog } from '@app/contract/orders/entities/order-status-log.entity';
+import { Transaction } from '@app/contract/orders/entities/transaction.entity';
+import { Refund } from '@app/contract/orders/entities/refund.entity';
 import Redis from 'ioredis';
 import { makeCounterProvider, makeGaugeProvider, makeHistogramProvider } from '@willsoto/nestjs-prometheus';
 import { CartMetricsService } from './metrics/cart-metrics.service';
+import { PaymentReconciliationService } from './services/payment-reconciliation.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Cart, CartItem, BookFormatVariant, Book, Order, OrderItem, OrderStatusLog]),
+    TypeOrmModule.forFeature([Cart, CartItem, BookFormatVariant, Book, Order, OrderItem, OrderStatusLog, Transaction, Refund]),
     RedisModule,
     ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
@@ -55,14 +58,15 @@ import { CartMetricsService } from './metrics/cart-metrics.service';
       }),
     }),
   ],
-  controllers: [CartController, PaymentWebhookController],
+  controllers: [CartController, PaymentWebhookController, TransactionsController],
   providers: [
     CartService,
     CheckoutService,
     ReservationWorkerService,
     TracingInterceptor,
     PhonePeProvider,
-    GooglePayProvider,
+    RazorpayProvider,
+    PaymentReconciliationService,
     // Strategy pattern for cleanup
     {
       provide: 'CART_CLEANUP_STRATEGY',
@@ -79,16 +83,7 @@ import { CartMetricsService } from './metrics/cart-metrics.service';
       },
       inject: [ConfigService, ReservationWorkerService],
     },
-    // Strategy pattern for payment
-    {
-      provide: 'PAYMENT_PROVIDER',
-      useFactory: (configService: ConfigService, phonePe: PhonePeProvider, googlePay: GooglePayProvider) => {
-        const provider = configService.get<string>('PAYMENT_PROVIDER', 'phonepe');
-        if (provider === 'googlepay') return googlePay;
-        return phonePe;
-      },
-      inject: [ConfigService, PhonePeProvider, GooglePayProvider],
-    },
+    // Metrics
     // Metrics
     CartMetricsService,
     makeCounterProvider({

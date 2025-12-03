@@ -12,7 +12,37 @@ async function bootstrap() {
 
   const app = await NestFactory.create(MagicPagesApiGatewayModule, {
     bufferLogs: true,
+    bodyParser: false, // Disable default body parser to handle raw body for webhooks
   });
+
+  // Middleware to capture raw body
+  const rawBodyMiddleware = (req, res, next) => {
+    if (req.originalUrl.includes('/webhook')) {
+      let data = '';
+      req.setEncoding('utf8');
+      req.on('data', (chunk) => {
+        data += chunk;
+      });
+      req.on('end', () => {
+        req.rawBody = data;
+        next();
+      });
+    } else {
+      next();
+    }
+  };
+
+  // Use express body parser for other routes, but we need to handle raw body for webhooks
+  // Actually, a better way is to use json() with verify
+  const bodyParser = require('body-parser');
+  app.use(bodyParser.json({
+    verify: (req, res, buf) => {
+      if (req.url.includes('/webhook')) {
+        req.rawBody = buf;
+      }
+    }
+  }));
+  app.use(bodyParser.urlencoded({ extended: true }));
 
   app.useLogger(app.get(LoggerService));
 
