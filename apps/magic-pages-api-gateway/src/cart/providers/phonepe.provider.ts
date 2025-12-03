@@ -1,34 +1,24 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   IPaymentProvider,
-  PaymentProvider,
   PaymentInitiationRequest,
   PaymentInitiationResponse,
+  PaymentProvider,
+  WebhookVerificationResult as PaymentVerificationResult,
+  PaymentActionType,
+  PaymentStatus,
   PaymentStatusResponse,
-  WebhookVerificationResult,
   RefundRequest,
   RefundResponse,
-  PaymentStatus,
 } from '../interfaces/payment-provider.interface';
 import * as crypto from 'crypto';
+import axios from 'axios';
 
-/**
- * PhonePe UPI Payment Provider
- *
- * Integration Guide: https://developer.phonepe.com/v1/docs/payment-gateway
- *
- * Features:
- * - UPI Intent (opens PhonePe app)
- * - UPI Collect (VPA-based)
- * - QR Code generation
- * - Webhook notifications
- *
- * Security:
- * - SHA256 signature verification
- * - Request/response encryption
- * - IP whitelisting (production)
- */
 @Injectable()
 export class PhonePeProvider implements IPaymentProvider {
   private readonly logger = new Logger(PhonePeProvider.name);
@@ -40,202 +30,233 @@ export class PhonePeProvider implements IPaymentProvider {
   constructor(private readonly configService: ConfigService) {
     this.merchantId = this.configService.get<string>('PHONEPE_MERCHANT_ID') || '';
     this.saltKey = this.configService.get<string>('PHONEPE_SALT_KEY') || '';
+    this.saltIndex = this.configService.get<string>('PHONEPE_SALT_INDEX', '1');
+
+    // Determine environment
+    const env = this.configService.get<string>('NODE_ENV');
+    const isProd = env === 'production';
+    this.apiBaseUrl = isProd
+      ? 'https://api.phonepe.com/apis/hermes'
+      : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
 
     if (!this.merchantId || !this.saltKey) {
       this.logger.warn('PhonePe configuration missing (MERCHANT_ID or SALT_KEY)');
     }
-
-    this.saltIndex = this.configService.get<string>('PHONEPE_SALT_INDEX', '1');
-    this.apiBaseUrl = this.configService.get<string>('PHONEPE_API_URL', 'https://api.phonepe.com/apis/hermes');
   }
 
   getProviderName(): PaymentProvider {
     return PaymentProvider.PHONEPE;
   }
 
-  /**
-   * Initiate a payment request with PhonePe
-   *
-   * @param request Payment initiation details
-   * @returns Payment initiation response with transaction ID and payment URL
-   * @throws Error if payment initiation fails
-   */
   async initiatePayment(request: PaymentInitiationRequest): Promise<PaymentInitiationResponse> {
     this.logger.log(`Initiating PhonePe payment for order ${request.orderId}`);
 
-    // PhonePe payload structure
     const payload = {
       merchantId: this.merchantId,
       merchantTransactionId: request.orderId,
-      merchantUserId: request.metadata?.userId || 'GUEST',
-      amount: Math.round(request.amount * 100), // Convert to paise
-      redirectUrl: request.callbackUrl,
-      redirectMode: 'POST',
-      callbackUrl: `${request.callbackUrl}/webhook`,
+      merchantUserId: request.metadata?.userId?.toString() || 'GUEST',
+      amount: request.amount * 100, // Amount in paise
+      redirectUrl: request.redirectUrl || request.callbackUrl, // Fallback to callback if no redirect provided
+      redirectMode: 'REDIRECT', // PhonePe will POST to this URL. Frontend needs to handle POST or we use GET?
+      // If we use POST, the frontend will receive form data. React router doesn't handle POST.
+      // Better to use 'REDIRECT' (GET) or 'POST' to a backend proxy that redirects.
+      // Standard PhonePe flow often uses POST. Let's check if we can use GET.
+      // PhonePe docs say: redirectMode: "REDIRECT" (GET) or "POST".
+      // Let's change to REDIRECT (GET) for easier frontend handling.
+      callbackUrl: request.callbackUrl,
       mobileNumber: request.customerPhone,
       paymentInstrument: {
-        type: 'UPI_INTENT',
-        targetApp: 'com.phonepe.app',
+        type: 'PAY_PAGE',
       },
     };
 
-    // Base64 encode payload
+    // Manual Hashing for verification
+    // SHA256(Base64_Payload + "/pg/v1/pay" + SALT_KEY) + "###" + SALT_INDEX
     const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64');
-
-    // Generate X-VERIFY header (SHA256 hash)
-    const xVerify = this.generateChecksum(base64Payload);
+    const apiEndpoint = '/pg/v1/pay';
+    const checksum = this.generateChecksum(base64Payload, apiEndpoint);
 
     try {
-      // TODO: Make actual API call to PhonePe
-      // const response = await axios.post(`${this.apiBaseUrl}/pg/v1/pay`, {
-      //   request: base64Payload
-      // }, {
-      //   headers: {
-      //     'Content-Type': 'application/json',
-      //     'X-VERIFY': xVerify,
-      //   }
-      // });
+      const response = await axios.post(
+        `${this.apiBaseUrl}${apiEndpoint}`,
+        {
+          request: base64Payload,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-VERIFY': checksum,
+          },
+        },
+      );
 
-      // Mock response for now
-      const mockResponse: PaymentInitiationResponse = {
-        transactionId: `PHONEPE_${request.orderId}_${Date.now()}`,
-        paymentUrl: `upi://pay?pa=merchant@phonepe&pn=MagicPages&am=${request.amount}&tr=${request.orderId}`,
-        expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
-        provider: PaymentProvider.PHONEPE,
-      };
-
-      this.logger.log(`PhonePe payment initiated: ${mockResponse.transactionId}`);
-      return mockResponse;
-    } catch (error) {
-      this.logger.error('PhonePe payment initiation failed', error);
-      throw new Error(`PhonePe payment failed: ${error.message}`);
-    }
-  }
-
-  /**
-   * Verify webhook signature from PhonePe
-   *
-   * @param headers Request headers containing X-VERIFY
-   * @param body Request body containing base64 encoded response
-   * @returns Verification result with status and transaction ID
-   */
-  async verifyWebhook(headers: Record<string, string>, body: any): Promise<WebhookVerificationResult> {
-    try {
-      const xVerify = headers['x-verify'];
-      const base64Response = body.response;
-
-      // Verify checksum
-      const expectedChecksum = this.generateChecksum(base64Response);
-
-      if (xVerify !== expectedChecksum) {
-        this.logger.warn('PhonePe webhook signature verification failed');
-        return { isValid: false, error: 'Invalid signature' };
+      const data = response.data;
+      if (data.success) {
+        const redirectUrl = data.data.instrumentResponse.redirectInfo.url;
+        return {
+          transactionId: request.orderId,
+          paymentUrl: redirectUrl,
+          provider: PaymentProvider.PHONEPE,
+          actionType: PaymentActionType.REDIRECT,
+        };
+      } else {
+        throw new InternalServerErrorException(`PhonePe API Error: ${data.message}`);
       }
-
-      // Decode response
-      const decodedResponse = JSON.parse(Buffer.from(base64Response, 'base64').toString('utf-8'));
-
-      return {
-        isValid: true,
-        transactionId: decodedResponse.data.merchantTransactionId,
-        status: this.mapPhonePeStatus(decodedResponse.code),
-      };
     } catch (error) {
-      this.logger.error('PhonePe webhook verification error', error);
-      return { isValid: false, error: error.message };
+      this.logger.error(`PhonePe payment initiation failed: ${error.message}`, error.response?.data);
+      throw new InternalServerErrorException('Payment initiation failed');
     }
   }
 
-  /**
-   * Check payment status with PhonePe
-   *
-   * @param transactionId Transaction ID to check
-   * @returns Current payment status
-   */
-  async getPaymentStatus(transactionId: string): Promise<PaymentStatusResponse> {
-    this.logger.log(`Checking PhonePe payment status for ${transactionId}`);
+  async verifyWebhook(headers: Record<string, string>, body: any): Promise<PaymentVerificationResult> {
+    const xVerify = headers['x-verify'];
+    if (!xVerify) {
+      return { isValid: false, error: 'Missing X-VERIFY header' };
+    }
 
-    const checksum = this.generateChecksum(`/pg/v1/status/${this.merchantId}/${transactionId}`);
+    let rawBodyString: string;
+    if (Buffer.isBuffer(body)) {
+      rawBodyString = body.toString('utf8');
+    } else if (typeof body === 'string') {
+      rawBodyString = body;
+    } else {
+      return { isValid: false, error: 'Invalid body format for verification' };
+    }
+
+    const calculatedChecksum = crypto
+      .createHash('sha256')
+      .update(rawBodyString + this.saltKey)
+      .digest('hex') + '###' + this.saltIndex;
+
+    if (calculatedChecksum !== xVerify) {
+      return { isValid: false, error: 'Checksum mismatch' };
+    }
+
+    const parsedBody = JSON.parse(rawBodyString);
+
+    let data: any;
+    if (parsedBody.response) {
+      const decoded = Buffer.from(parsedBody.response, 'base64').toString('utf8');
+      data = JSON.parse(decoded);
+    } else {
+      data = parsedBody;
+    }
+
+    const status = data.code === 'PAYMENT_SUCCESS' ? PaymentStatus.SUCCESS : data.code === 'PAYMENT_ERROR' ? PaymentStatus.FAILED : PaymentStatus.PENDING;
+    const transactionId = data.data.merchantTransactionId;
+
+    return {
+      isValid: true,
+      transactionId,
+      status,
+      provider: PaymentProvider.PHONEPE,
+    };
+  }
+
+  async getPaymentStatus(transactionId: string): Promise<PaymentStatusResponse> {
+    const apiEndpoint = `/pg/v1/status/${this.merchantId}/${transactionId}`;
+
+    const statusChecksum = crypto
+      .createHash('sha256')
+      .update(apiEndpoint + this.saltKey)
+      .digest('hex') + '###' + this.saltIndex;
 
     try {
-      // TODO: Make actual API call
-      // const response = await axios.get(
-      //   `${this.apiBaseUrl}/pg/v1/status/${this.merchantId}/${transactionId}`,
-      //   { headers: { 'X-VERIFY': checksum, 'X-MERCHANT-ID': this.merchantId } }
-      // );
+      const response = await axios.get(`${this.apiBaseUrl}${apiEndpoint}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-VERIFY': statusChecksum,
+          'X-MERCHANT-ID': this.merchantId,
+        },
+      });
 
-      // Mock response
-      return {
-        transactionId,
-        status: PaymentStatus.PENDING,
-        amount: 0,
-      };
+      const data = response.data;
+      if (data.success) {
+        const status = data.code === 'PAYMENT_SUCCESS' ? PaymentStatus.SUCCESS : data.code === 'PAYMENT_ERROR' ? PaymentStatus.FAILED : PaymentStatus.PENDING;
+        return {
+          transactionId,
+          status,
+          amount: data.data.amount / 100, // PhonePe returns in paise
+          providerResponse: data,
+        };
+      } else {
+        return {
+          transactionId,
+          status: PaymentStatus.FAILED,
+          amount: 0,
+          failureReason: data.message,
+        };
+      }
     } catch (error) {
-      this.logger.error('PhonePe status check failed', error);
-      throw error;
+      this.logger.error(`PhonePe status check failed: ${error.message}`);
+      throw new InternalServerErrorException(error.message);
     }
   }
 
-  /**
-   * Initiate a refund for a transaction
-   *
-   * @param request Refund details
-   * @returns Refund initiation response
-   */
   async initiateRefund(request: RefundRequest): Promise<RefundResponse> {
-    this.logger.log(`Initiating PhonePe refund for ${request.transactionId}`);
+    this.logger.log(`Initiating PhonePe refund for transaction ${request.transactionId}`);
 
     const payload = {
       merchantId: this.merchantId,
-      merchantTransactionId: request.transactionId,
+      merchantUserId: this.merchantId, // Or specific user ID if available
       originalTransactionId: request.transactionId,
-      amount: Math.round(request.amount * 100),
-      callbackUrl: `${this.configService.get('APP_URL')}/webhooks/phonepe/refund`,
+      merchantTransactionId: `REFUND_${request.transactionId}_${Date.now()}`,
+      amount: request.amount * 100, // Amount in paise
+      callbackUrl: `${this.configService.get('APP_URL')}/cart/webhook/refund`, // Optional
     };
 
-    // TODO: Implement actual refund API call
+    const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64');
+    const apiEndpoint = '/pg/v1/refund';
+    const checksum = this.generateChecksum(base64Payload, apiEndpoint);
 
-    return {
-      refundId: `REFUND_${request.transactionId}_${Date.now()}`,
-      status: 'INITIATED',
-    };
+    try {
+      const response = await axios.post(
+        `${this.apiBaseUrl}${apiEndpoint}`,
+        {
+          request: base64Payload,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-VERIFY': checksum,
+          },
+        },
+      );
+
+      const data = response.data;
+      if (data.success) {
+        return {
+          refundId: data.data.merchantTransactionId,
+          status: 'INITIATED', // PhonePe usually processes instantly or queues it
+          processedAt: new Date(),
+        };
+      } else {
+        this.logger.error(`PhonePe refund failed: ${data.message}`);
+        return {
+          refundId: payload.merchantTransactionId,
+          status: 'FAILED',
+        };
+      }
+    } catch (error) {
+      this.logger.error(`PhonePe refund error: ${error.message}`, error.response?.data);
+      throw new InternalServerErrorException('Refund initiation failed');
+    }
   }
 
-  /**
-   * Check if a specific feature is supported by this provider
-   *
-   * @param feature Feature to check
-   * @returns True if supported, false otherwise
-   */
   supportsFeature(feature: 'QR_CODE' | 'INTENT' | 'RECURRING' | 'INTERNATIONAL'): boolean {
-    const supportedFeatures = {
+    const supported = {
       QR_CODE: true,
       INTENT: true,
       RECURRING: false,
       INTERNATIONAL: false,
     };
-    return supportedFeatures[feature] || false;
+    return supported[feature] || false;
   }
 
-  /**
-   * Generate SHA256 checksum for PhonePe API
-   */
-  private generateChecksum(payload: string): string {
-    const checksumString = `${payload}/pg/v1/pay${this.saltKey}`;
-    return crypto.createHash('sha256').update(checksumString).digest('hex') + '###' + this.saltIndex;
-  }
-
-  /**
-   * Map PhonePe status codes to our PaymentStatus enum
-   */
-  private mapPhonePeStatus(code: string): PaymentStatus {
-    const statusMap: Record<string, PaymentStatus> = {
-      PAYMENT_SUCCESS: PaymentStatus.SUCCESS,
-      PAYMENT_ERROR: PaymentStatus.FAILED,
-      PAYMENT_PENDING: PaymentStatus.PENDING,
-      PAYMENT_DECLINED: PaymentStatus.FAILED,
-      TRANSACTION_NOT_FOUND: PaymentStatus.FAILED,
-    };
-    return statusMap[code] || PaymentStatus.PENDING;
+  private generateChecksum(payload: string, endpoint: string = ''): string {
+    return crypto
+      .createHash('sha256')
+      .update(payload + endpoint + this.saltKey)
+      .digest('hex') + '###' + this.saltIndex;
   }
 }

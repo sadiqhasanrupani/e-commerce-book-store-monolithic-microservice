@@ -10,6 +10,7 @@ import {
   RefundRequest,
   RefundResponse,
   PaymentStatus,
+  PaymentActionType,
 } from '../interfaces/payment-provider.interface';
 
 /**
@@ -62,6 +63,7 @@ export class GooglePayProvider implements IPaymentProvider {
       paymentUrl: upiUrl,
       expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
       provider: PaymentProvider.GOOGLEPAY,
+      actionType: PaymentActionType.REDIRECT,
     };
 
     this.logger.log(`GooglePay payment initiated: ${response.transactionId}`);

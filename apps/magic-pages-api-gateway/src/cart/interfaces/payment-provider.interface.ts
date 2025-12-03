@@ -29,15 +29,23 @@ export interface PaymentInitiationRequest {
   customerPhone: string;
   customerEmail?: string;
   callbackUrl: string;
+  redirectUrl?: string; // URL to redirect user after payment (Frontend)
   metadata?: Record<string, any>;
+}
+
+export enum PaymentActionType {
+  REDIRECT = 'REDIRECT',
+  MODAL = 'MODAL',
 }
 
 export interface PaymentInitiationResponse {
   transactionId: string;
-  paymentUrl: string;
+  paymentUrl?: string; // For Redirect
+  orderId?: string; // For Razorpay Modal
   qrCode?: string;
-  expiresAt: Date;
+  expiresAt?: Date;
   provider: PaymentProvider;
+  actionType: PaymentActionType;
 }
 
 export interface PaymentStatusResponse {
