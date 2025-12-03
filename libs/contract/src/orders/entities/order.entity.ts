@@ -11,6 +11,7 @@ import { User } from '@app/contract/users/entities/user.entity';
 import { OrderItem } from './order-item.entity';
 import { OrderStatusLog } from './order-status-log.entity';
 import { PaymentStatus, FulfillmentStatus } from '../enums/order-status.enum';
+import { Transaction } from './transaction.entity';
 
 @Entity('orders')
 export class Order {
@@ -40,6 +41,9 @@ export class Order {
 
   @OneToMany(() => OrderStatusLog, (log) => log.order)
   status_logs: OrderStatusLog[];
+
+  @OneToMany(() => Transaction, (transaction) => transaction.order)
+  transactions: Transaction[];
 
   @CreateDateColumn()
   created_at: Date;
