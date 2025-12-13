@@ -90,12 +90,13 @@ describe('PaymentWebhook Integration (Postgres)', () => {
 
   it('should commit transaction and deduct stock on SUCCESS', async () => {
     // 1. Setup Data: Order PENDING, Cart CHECKOUT, Stock 10, Reserved 1
+    // Create User FIRST to get ID
+    const user = await userRepo.save({ email: 'webhook_user1@test.com' } as any);
+
     const variant = await variantRepo.save({ stockQuantity: 10, reservedQuantity: 1, format: BookFormat.PHYSICAL, price: 100 } as any);
-    const cart = await cartRepo.save({ userId: 1, status: CartStatus.CHECKOUT } as any);
+    const cart = await cartRepo.save({ userId: user.id, status: CartStatus.CHECKOUT } as any);
     await cartItemRepo.save({ cart, qty: 1, bookFormatVariant: variant, unitPrice: 100 } as any);
 
-    // Create correct hierarchy: User -> Order -> Items
-    const user = await userRepo.save({ email: 'webhook_user1@test.com' } as any);
     const order = await orderRepo.save({
       user: user,
       payment_status: PaymentStatus.PENDING,
@@ -132,17 +133,15 @@ describe('PaymentWebhook Integration (Postgres)', () => {
 
   it('should revert cart to ACTIVE and release reservation on FAILED (with Timestamp Touch)', async () => {
     // 1. Setup
-    await userRepo.save({ id: 2, email: 'user2@test.com' } as any);
+    const user = await userRepo.save({ email: 'webhook_user2@test.com' } as any);
+
     const variant = await variantRepo.save({ stockQuantity: 10, reservedQuantity: 1, format: BookFormat.PHYSICAL, price: 100 } as any);
-    const initialCart = await cartRepo.save({ userId: 2, status: CartStatus.CHECKOUT } as any);
+    const initialCart = await cartRepo.save({ userId: user.id, status: CartStatus.CHECKOUT } as any);
     await cartItemRepo.save({ cart: initialCart, qty: 1, bookFormatVariant: variant, unitPrice: 100 } as any);
 
     // Sleep to ensure timestamp difference
     await new Promise(r => setTimeout(r, 1000));
 
-    // Create correct hierarchy: User -> Order -> Items
-    const user = await userRepo.save({ email: 'webhook_user2@test.com' } as any);
-    console.error('DEBUG: Created User ID:', user.id);
     const order = await orderRepo.save({
       user: user,
       payment_status: PaymentStatus.PENDING,

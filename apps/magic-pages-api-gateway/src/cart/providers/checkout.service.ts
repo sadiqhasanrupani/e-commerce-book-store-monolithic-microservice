@@ -52,8 +52,9 @@ export class CheckoutService {
         if (existingTxn.raw_response) {
           return existingTxn.raw_response as PaymentInitiationResponse;
         }
-        // If no raw_response, maybe it failed or is pending? 
-        // For now let's continue or throw, but typically we return the previous success response
+        // If no raw_response, transaction might be stuck in PENDING or failed.
+        // We could return pending status or let it proceed if we want to double-check (but unique constraint will block double-insert).
+        // ideally we return the existing state.
       }
     }
 
@@ -226,7 +227,22 @@ export class CheckoutService {
         }
 
         // Save transaction first to get ID (if needed, though UUID is generated)
-        const savedTransaction = await this.transactionRepository.save(transaction);
+        let savedTransaction: Transaction;
+
+        try {
+          savedTransaction = await this.transactionRepository.save(transaction);
+        } catch (error) {
+          if (error.code === '23505') { // Unique constraint violation (Postgres)
+            this.logger.log(`Idempotency hit for key ${idempotencyKey}`);
+            const existingTxn = await this.transactionRepository.findOne({ where: { idempotency_key: idempotencyKey } });
+            if (existingTxn && existingTxn.raw_response) {
+              return existingTxn.raw_response as PaymentInitiationResponse;
+            }
+            // Should not happen if constraint fired, but safe fallback
+            throw new ConflictException('Concurrent duplicate request detected');
+          }
+          throw error;
+        }
 
         const paymentResponse = await provider.initiatePayment({
           orderId: savedTransaction.id, // Use Transaction UUID for uniqueness and retry support

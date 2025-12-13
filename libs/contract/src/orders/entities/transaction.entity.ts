@@ -58,8 +58,7 @@ export class Transaction {
   @OneToMany(() => Refund, (refund) => refund.transaction)
   refunds: Refund[];
 
-  @Index()
-  @Column({ nullable: true })
+  @Column({ nullable: true, unique: true })
   idempotency_key: string;
 
   @CreateDateColumn()

@@ -88,6 +88,7 @@ describe('Checkout Integration (Postgres)', () => {
   });
 
   afterEach(async () => {
+    jest.clearAllMocks();
     // Clean up tables
     await dataSource.query('TRUNCATE TABLE "cart_items", "orders", "transactions", "carts", "book_format_varients", "users" CASCADE');
   });
