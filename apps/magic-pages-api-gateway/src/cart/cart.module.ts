@@ -27,6 +27,8 @@ import Redis from 'ioredis';
 import { makeCounterProvider, makeGaugeProvider, makeHistogramProvider } from '@willsoto/nestjs-prometheus';
 import { CartMetricsService } from './metrics/cart-metrics.service';
 import { PaymentReconciliationService } from './services/payment-reconciliation.service';
+import { OrderTimeoutService } from './services/order-timeout.service';
+
 
 @Module({
   imports: [
@@ -67,6 +69,7 @@ import { PaymentReconciliationService } from './services/payment-reconciliation.
     PhonePeProvider,
     RazorpayProvider,
     PaymentReconciliationService,
+    OrderTimeoutService,
     // Strategy pattern for cleanup
     {
       provide: 'CART_CLEANUP_STRATEGY',

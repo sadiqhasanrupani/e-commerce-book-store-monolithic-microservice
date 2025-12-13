@@ -39,9 +39,23 @@ export class CheckoutService {
   ) { }
 
   async checkout(userId: number, dto: CheckoutDto, idempotencyKey?: string): Promise<PaymentInitiationResponse> {
+    console.error(`DEBUG: checkout called for user ${userId}`);
     const startTime = Date.now();
     this.metricsService.incrementCheckoutRequest('pending');
     this.logger.log(`Initiating checkout for user ${userId}`);
+
+    // Idempotency Check
+    if (idempotencyKey) {
+      const existingTxn = await this.transactionRepository.findOne({ where: { idempotency_key: idempotencyKey } });
+      if (existingTxn) {
+        this.logger.log(`Idempotency hit for key ${idempotencyKey}`);
+        if (existingTxn.raw_response) {
+          return existingTxn.raw_response as PaymentInitiationResponse;
+        }
+        // If no raw_response, maybe it failed or is pending? 
+        // For now let's continue or throw, but typically we return the previous success response
+      }
+    }
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -50,13 +64,21 @@ export class CheckoutService {
     try {
       // 1. Find Cart (Locking handled by optimistic locking or explicit lock if needed)
       // For checkout, we want to ensure no one else modifies the cart
+      // FIX: Lock ONLY the cart row first to avoid "FOR UPDATE cannot be applied to the nullable side of an outer join"
+      await queryRunner.manager.findOne(Cart, {
+        where: { userId, status: CartStatus.ACTIVE },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      // Now fetch with relations (lock is already held by transaction on the cart row)
       const cart = await queryRunner.manager.findOne(Cart, {
         where: { userId, status: CartStatus.ACTIVE },
         relations: ['items', 'items.bookFormatVariant'],
-        lock: { mode: 'pessimistic_write' }, // Lock cart to prevent updates
       });
 
-      if (!cart) {
+      console.error(`DEBUG: Fetched cart for user ${userId}. Items: ${cart?.items?.length}`);
+
+      if (!cart || cart.items.length === 0) {
         throw new NotFoundException({
           code: CartErrorCode.CART_NOT_FOUND,
           message: 'Active cart not found',
@@ -76,7 +98,6 @@ export class CheckoutService {
 
       for (const cartItem of cart.items) {
         const variant = cartItem.bookFormatVariant;
-
         if (!variant) {
           throw new NotFoundException({
             code: CartErrorCode.CART_ITEM_NOT_FOUND,
@@ -101,9 +122,10 @@ export class CheckoutService {
           // JIT Validation & Re-reservation
           if (!cartItem.isStockReserved) {
             // Item is in cart but reservation expired. Check if we can re-reserve.
-            const availableStock = lockedVariant.stockQuantity - lockedVariant.reservedQuantity;
+            const availableStock = Number(lockedVariant.stockQuantity) - Number(lockedVariant.reservedQuantity);
+            const requestedQty = Number(cartItem.qty);
 
-            if (availableStock < cartItem.qty) {
+            if (availableStock < requestedQty) {
               throw new ConflictException({
                 code: CartErrorCode.INSUFFICIENT_STOCK,
                 message: `Insufficient stock for ${cartItem.title}`,
@@ -117,9 +139,8 @@ export class CheckoutService {
 
             // Re-reserve stock (JIT)
             // We increment reservedQuantity now, so that the final decrement step works correctly
+            this.logger.log(`Before Increment: Stock=${lockedVariant.stockQuantity}, Reserved=${lockedVariant.reservedQuantity}`);
             await queryRunner.manager.increment(BookFormatVariant, { id: variant.id }, 'reservedQuantity', cartItem.qty);
-
-            // Log this event?
             this.logger.log(`JIT Re-reservation successful for item ${cartItem.id} (Qty: ${cartItem.qty})`);
           } else {
             // Already reserved. Sanity check.
@@ -142,7 +163,6 @@ export class CheckoutService {
         orderItem.bookFormatVariant = variant;
         orderItem.quantity = cartItem.qty;
         orderItem.unit_price = Number(cartItem.unitPrice);
-        orderItem.total_price = Number(cartItem.unitPrice) * cartItem.qty;
         orderItems.push(orderItem);
       }
 
@@ -164,14 +184,8 @@ export class CheckoutService {
       }
 
       // 5. Update Stock
-      for (const cartItem of cart.items) {
-        const variant = cartItem.bookFormatVariant;
-        if (isPhysicalFormat(variant.format)) {
-          // Decrement stockQuantity AND reservedQuantity
-          await queryRunner.manager.decrement(BookFormatVariant, { id: variant.id }, 'stockQuantity', cartItem.qty);
-          await queryRunner.manager.decrement(BookFormatVariant, { id: variant.id }, 'reservedQuantity', cartItem.qty);
-        }
-      }
+      // KEEP reservation held until Payment Success/Failure
+      // Do NOT decrement reservedQuantity here.
 
       // 6. Update Cart Status
       cart.status = CartStatus.CHECKOUT;
@@ -183,21 +197,21 @@ export class CheckoutService {
       // 7. Initiate Payment (Outside DB transaction to avoid long locks)
       try {
         // Determine Provider
-        // Logic: INR -> PhonePe, Others -> Razorpay
-        // We can also check user preference or other rules here
+        const providerName = dto.paymentMethod;
+        let provider: IPaymentProvider;
 
         // For now, hardcoded rule:
-        const currency = 'INR'; // Assuming INR for now as cart doesn't seem to have currency yet. TODO: Get from cart/user context
+        const currency = 'INR';
 
-        let provider: IPaymentProvider;
-        let providerEnum: PaymentProvider;
+        const providers: Record<string, IPaymentProvider> = {
+          [PaymentProvider.PHONEPE]: this.phonePeProvider,
+          [PaymentProvider.RAZORPAY]: this.razorpayProvider,
+        };
 
-        if (currency === 'INR') {
-          provider = this.phonePeProvider;
-          providerEnum = PaymentProvider.PHONEPE;
-        } else {
-          provider = this.razorpayProvider;
-          providerEnum = PaymentProvider.RAZORPAY;
+        provider = providers[providerName];
+
+        if (!provider) {
+          throw new ConflictException("Invalid payment provider");
         }
 
         // Create Transaction Record
@@ -206,7 +220,10 @@ export class CheckoutService {
         transaction.amount = totalAmount;
         transaction.currency = currency;
         transaction.status = TransactionStatus.PENDING;
-        transaction.provider = providerEnum;
+        transaction.provider = providerName;
+        if (idempotencyKey) {
+          transaction.idempotency_key = idempotencyKey;
+        }
 
         // Save transaction first to get ID (if needed, though UUID is generated)
         const savedTransaction = await this.transactionRepository.save(transaction);

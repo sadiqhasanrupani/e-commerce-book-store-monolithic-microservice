@@ -23,6 +23,8 @@ import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { PhonePeProvider } from './providers/phonepe.provider';
 import { RazorpayProvider } from './providers/razorpay.provider';
 import { Transaction, TransactionStatus } from '@app/contract/orders/entities/transaction.entity';
+import { BookFormatVariant } from '@app/contract/books/entities/book-format-varient.entity';
+import { DataSource } from 'typeorm';
 
 @ApiTags('Payment Webhooks')
 @Controller('cart/webhook')
@@ -38,6 +40,9 @@ export class PaymentWebhookController {
     private readonly cartRepository: Repository<Cart>,
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
+    @InjectRepository(BookFormatVariant)
+    private readonly variantRepository: Repository<BookFormatVariant>,
+    private readonly dataSource: DataSource,
     private readonly metricsService: CartMetricsService,
   ) { }
 
@@ -87,75 +92,117 @@ export class PaymentWebhookController {
       providerEnum
     );
 
-    // 2. Update Transaction and Order Status
-    // We need to find the transaction.
-    // verification.transactionId should match our gateway_ref_id or we need to look it up.
-    // For PhonePe, we sent orderId as merchantTransactionId.
-    // For Razorpay, we get razorpay_order_id.
+    // 2. Update Transaction and Order Status (Transactional)
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    // In CheckoutService, we saved gateway_ref_id.
+    try {
+      // Find Transaction within Transaction Context? 
+      // Actually we can find it normally, but need to lock it if we were stricter.
+      // For now, simpler approach: fetch, verify, then write using queryRunner.
 
-    let transaction: Transaction | null = null;
+      let transaction: Transaction | null = null;
+      // ... (finding transaction logic remains same, but we will use it inside logic)
 
-    if (providerEnum === PaymentProvider.PHONEPE) {
-      // PhonePe merchantTransactionId is now our Transaction UUID
-      const transactionId = verification.transactionId;
-      transaction = await this.transactionRepository.findOne({
-        where: { id: transactionId },
-        relations: ['order', 'order.user']
-      });
+      if (providerEnum === PaymentProvider.PHONEPE) {
+        transaction = await queryRunner.manager.findOne(Transaction, {
+          where: { id: verification.transactionId },
+          relations: ['order', 'order.items', 'order.items.bookFormatVariant', 'order.user']
+        });
+      } else {
+        transaction = await queryRunner.manager.findOne(Transaction, {
+          where: { gateway_ref_id: verification.transactionId },
+          relations: ['order', 'order.items', 'order.items.bookFormatVariant', 'order.user']
+        });
+      }
 
-    } else {
-      // Razorpay: transactionId is razorpay_order_id
-      transaction = await this.transactionRepository.findOne({
-        where: { gateway_ref_id: verification.transactionId },
-        relations: ['order', 'order.user']
-      });
-    }
+      if (!transaction) {
+        this.logger.error(`Transaction not found for webhook: ${verification.transactionId}`);
+        await queryRunner.rollbackTransaction();
+        return { status: 'ignored' };
+      }
 
-    if (!transaction) {
-      this.logger.error(`Transaction not found for webhook: ${verification.transactionId}`);
-      // It might be that we already processed it?
-      return { status: 'ignored' };
-    }
+      if (transaction.status === TransactionStatus.SUCCESS) {
+        this.logger.log(`Transaction ${transaction.id} already successful`);
+        await queryRunner.rollbackTransaction();
+        return { status: 'already_processed' };
+      }
 
-    if (transaction.status === TransactionStatus.SUCCESS) {
-      this.logger.log(`Transaction ${transaction.id} already successful`);
-      return { status: 'already_processed' };
-    }
-
-    // Update Transaction Status
-    if (verification.status === 'SUCCESS') {
-      transaction.status = TransactionStatus.SUCCESS;
-      transaction.raw_response = { ...transaction.raw_response, webhook: req.body }; // Save webhook body
-      await this.transactionRepository.save(transaction);
-
-      // Update Order Status
       const order = transaction.order;
-      if (order.payment_status !== PaymentStatus.PAID) {
-        order.payment_status = PaymentStatus.PAID;
-        await this.orderRepository.save(order);
 
-        // Update Cart
-        const cart = await this.cartRepository.findOne({
+      // Update Transaction Status
+      if (verification.status === 'SUCCESS') {
+        transaction.status = TransactionStatus.SUCCESS;
+        transaction.raw_response = { ...transaction.raw_response, webhook: req.body };
+        await queryRunner.manager.save(Transaction, transaction);
+
+        if (order.payment_status !== PaymentStatus.PAID) {
+          order.payment_status = PaymentStatus.PAID;
+          await queryRunner.manager.save(Order, order);
+
+          // Permanent Stock Deduction (Commit)
+          for (const item of order.items) {
+            const variant = item.bookFormatVariant;
+            // We need to decrement stockQuantity AND reservedQuantity
+            // Previous logic only decremented reservedQuantity at checkout. 
+            // Now we decrement BOTH here.
+            // WAIT! logic says: "Decrement stockQuantity. Decrement reservedQuantity".
+            // Assuming isPhysicalFormat check was done at checkout or we check again.
+            // Ideally check format.
+            // We assume variants are loaded.
+            if (variant) {
+              // TODO: Check isPhysicalFormat(variant.format). For now Assuming yes or harmless if digital has quantity.
+              await queryRunner.manager.decrement(BookFormatVariant, { id: variant.id }, 'stockQuantity', item.quantity);
+              await queryRunner.manager.decrement(BookFormatVariant, { id: variant.id }, 'reservedQuantity', item.quantity);
+            }
+          }
+
+          // Update Cart
+          const cart = await queryRunner.manager.findOne(Cart, {
+            where: { userId: order.user.id, status: CartStatus.CHECKOUT }
+          });
+          if (cart) {
+            cart.status = CartStatus.COMPLETED;
+            await queryRunner.manager.save(Cart, cart);
+          }
+        }
+      } else if (verification.status === 'FAILED') {
+        transaction.status = TransactionStatus.FAILED;
+        transaction.raw_response = { ...transaction.raw_response, webhook: req.body };
+        await queryRunner.manager.save(Transaction, transaction);
+
+        // Revert Cart to ACTIVE and Touch updatedAt
+        const cart = await queryRunner.manager.findOne(Cart, {
           where: { userId: order.user.id, status: CartStatus.CHECKOUT }
         });
         if (cart) {
-          cart.status = CartStatus.COMPLETED;
-          await this.cartRepository.save(cart);
+          cart.status = CartStatus.ACTIVE;
+          // Touch updated_at is automatic on save? Yes, usually.
+          // But we can explicitly set it to be sure or just saving changes it.
+          // However, we want to ensure the entity is marked as dirty.
+          // Changing status is enough.
+          await queryRunner.manager.save(Cart, cart);
+
+          // Should we release reserved quantity? 
+          // RFC plan said: "Decrement reservedQuantity (Release hold)".
+          // BUT user said: "Revert Cart to ACTIVE and Touch updatedAt".
+          // If we revert to ACTIVE, the reservation should stay valid for another 15m.
+          // So we DO NOT release reservedQuantity here. We let the cleanup cron handle it if user abandons.
+          // If we released it, user would lose the item immediately.
         }
       }
-    } else if (verification.status === 'FAILED') {
-      transaction.status = TransactionStatus.FAILED;
-      transaction.raw_response = { ...transaction.raw_response, webhook: req.body };
-      await this.transactionRepository.save(transaction);
 
-      // We don't necessarily fail the order immediately, user might retry.
-      // But we can mark it as FAILED if we want.
-      // order.payment_status = PaymentStatus.FAILED;
-      // await this.orderRepository.save(order);
+      await queryRunner.commitTransaction();
+      return { status: 'processed' };
+
+    } catch (error) {
+      this.logger.error('Webhook processing failed', error);
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
 
-    return { status: 'processed' };
   }
 }

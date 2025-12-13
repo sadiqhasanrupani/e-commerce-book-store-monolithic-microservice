@@ -6,6 +6,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  Index,
 } from 'typeorm';
 import { Order } from './order.entity';
 import { Refund } from './refund.entity';
@@ -56,6 +57,10 @@ export class Transaction {
 
   @OneToMany(() => Refund, (refund) => refund.transaction)
   refunds: Refund[];
+
+  @Index()
+  @Column({ nullable: true })
+  idempotency_key: string;
 
   @CreateDateColumn()
   created_at: Date;
