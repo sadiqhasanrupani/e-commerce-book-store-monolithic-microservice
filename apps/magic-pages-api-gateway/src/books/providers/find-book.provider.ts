@@ -133,16 +133,22 @@ export class FindBookProvider {
         'book.authorName',
         'book.genre',
         'book.description',
+        'book.shortDescription', // Added
+        'book.bullets',          // Added
         'book.isNewRelease',
         'book.slug',
         'book.metaTitle',
         'book.metaDescription',
         'book.coverImageUrl',
+        'book.snapshots',        // Added
+        'book.snapshotUrls',     // Added
         'book.isBestseller',
         'book.isFeatured',
         'book.visibility',
+        'book.isArchived',       // Added
         'book.ageGroup',
         'book.createdAt',
+        'book.updatedAt',        // Added
       ])
         .addSelect(subQuery => {
           return subQuery
@@ -160,8 +166,14 @@ export class FindBookProvider {
             )`, 'variants')
             .from('book_format_varients', 'variant')
             .where('variant.book_id = book.id');
-        }, 'variantsRaw'); // This alias appears in 'raw' results
-      ;
+        }, 'variantsRaw');
+
+      // If Admin, bring in relations too for complete view (optional, but requested "all of it")
+      if (isAdmin) {
+        qb.leftJoinAndSelect('book.categories', 'cat_rel');
+        qb.leftJoinAndSelect('book.ageGroups', 'ag_rel');
+        qb.leftJoinAndSelect('book.tags', 'tag_rel');
+      }
 
       // --- Filters ---
 

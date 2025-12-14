@@ -36,6 +36,12 @@ export class Book {
   @Column({ type: 'text', nullable: true })
   description?: string;
 
+  @Column({ type: 'text', nullable: true })
+  shortDescription?: string;
+
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  bullets: string[];
+
   @Column({ length: 80, nullable: true })
   genre?: string;
 
@@ -112,18 +118,18 @@ export class Book {
   @OneToMany(() => BookFormatVariant, (variant) => variant.book)
   formats: BookFormatVariant[];
 
-  @ManyToMany(() => Category)
+  @ManyToMany(() => Category, { cascade: true })
   @JoinTable({ name: 'book_categories' })
   categories: Category[];
 
-  @ManyToMany(() => Tag)
+  @ManyToMany(() => Tag, { cascade: true })
   @JoinTable({ name: 'book_tags' })
   tags: Tag[];
 
   @OneToMany(() => BookMetric, (metric) => metric.book)
   metrics: BookMetric[];
 
-  @ManyToMany(() => AgeGroup, (ageGroup) => ageGroup.books)
+  @ManyToMany(() => AgeGroup, (ageGroup) => ageGroup.books, { cascade: true })
   @JoinTable({ name: 'book_age_groups' })
   ageGroups: AgeGroup[];
 

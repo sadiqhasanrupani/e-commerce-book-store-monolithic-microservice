@@ -18,6 +18,9 @@ export class BookVariantResponseDto {
   @ApiProperty()
   format: string;
 
+  @ApiProperty()
+  isPhysical: boolean;
+
   @ApiProperty({ type: BookPriceDto })
   price: BookPriceDto;
 

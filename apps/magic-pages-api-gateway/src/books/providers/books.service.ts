@@ -33,6 +33,9 @@ import {
 import { FindBookProvider } from './find-book.provider';
 import { BufferType } from '@app/contract/books/types/upload-book-file.type';
 import { BookFormatVariant } from '@app/contract/books/entities/book-format-varient.entity';
+import { Category } from '@app/contract/books/entities/categories.entity';
+import { Tag } from '@app/contract/books/entities/tags.entity';
+import { isPhysicalFormat } from '@app/contract/books/enums/book-format.enum';
 
 type UploadAssetsResult = {
   uploadedKeys: string[];
@@ -333,6 +336,8 @@ export class BooksService {
         title: createBookDto.title,
         subtitle: createBookDto.subtitle,
         description: createBookDto.description,
+        shortDescription: createBookDto.shortDescription,
+        bullets: createBookDto.bullets,
         genre: createBookDto.genre,
         authorId: createBookDto.authorId ?? undefined,
         authorName: createBookDto.authorName ?? createBookDto.author?.name ?? undefined,
@@ -359,6 +364,22 @@ export class BooksService {
         bookPayload.ageGroups = ageGroups;
       }
 
+      // Handle Categories
+      if (createBookDto.categoryIds && createBookDto.categoryIds.length > 0) {
+        const categories = await queryRunner.manager.getRepository(Category).findBy({
+          id: In(createBookDto.categoryIds),
+        });
+        bookPayload.categories = categories;
+      }
+
+      // Handle Tags
+      if (createBookDto.tagIds && createBookDto.tagIds.length > 0) {
+        const tags = await queryRunner.manager.getRepository(Tag).findBy({
+          id: In(createBookDto.tagIds),
+        });
+        bookPayload.tags = tags;
+      }
+
       // create Book row
       const bookRepo = queryRunner.manager.getRepository(Book);
       const bookEntity = bookRepo.create(bookPayload);
@@ -375,7 +396,7 @@ export class BooksService {
           // priceCents on variant DTO is 'priceCents' — use appropriate column names (price in your entity is numeric; we used priceCents on DTO)
           // Convert integer cents to numeric stored value as string/number depending on DB mapping. Here we store as numeric/decimal:
           price: typeof (vDto as any).priceCents !== 'undefined' ? (vDto as any).priceCents / 100 : undefined,
-          stockQuantity: vDto.stockQuantity ?? 0,
+          stockQuantity: isPhysicalFormat(vDto.format as any) ? (vDto.stockQuantity ?? 0) : 0,
           reservedQuantity: 0,
           fileUrl: variantFileUrls[idx] ?? vDto.fileUrl ?? null,
           isbn: vDto.isbn,
@@ -399,7 +420,7 @@ export class BooksService {
       // reload book with variants to return (fresh)
       const bookWithRelations = await this.bookRepository.findOne({
         where: { id: savedBook.id },
-        relations: ['formats', 'categories', 'tags', 'metrics', 'author'],
+        relations: ['formats', 'categories', 'tags', 'metrics', 'author', 'ageGroups'],
       });
 
       this.logger.log(`Book created: ${savedBook.id} (variants: ${createBookDto.variants.length})`);
@@ -566,6 +587,7 @@ export class BooksService {
       return {
         id: variant.id,
         format: variant.format,
+        isPhysical: isPhysicalFormat(variant.format as any),
         price: {
           amount: priceAmount,
           currency: priceCurrency,
@@ -584,6 +606,7 @@ export class BooksService {
       subtitle: book.subtitle ?? undefined,
       slug: book.slug ?? '',
       authorName: book.authorName ?? undefined,
+      genre: book.genre,
       // publisher: book.publisher, // Missing in entity
       // publishedDate: book.publishedDate, // Missing in entity
       publishedDate: book.createdAt, // Fallback
@@ -596,6 +619,13 @@ export class BooksService {
       isFeatured: book.isFeatured,
       isNewRelease: book.isNewRelease,
       variants,
+      visibility: book.visibility as any,
+      isArchived: book.isArchived,
+      bullets: book.bullets,
+      shortDescription: book.shortDescription,
+      ageGroupIds: book.ageGroups?.map(ag => ag.id) ?? [],
+      categoryIds: book.categories?.map(c => c.id) ?? [],
+      tagIds: book.tags?.map(t => t.id) ?? [],
     };
   }
 
@@ -792,11 +822,42 @@ export class BooksService {
         'isNewRelease',
         'allowReviews',
         'allowWishlist',
+        'allowWishlist',
         'visibility',
-        'categoryIds',
-        'tagIds',
+        // 'categoryIds', // Removing these from simple fields as they are relations
+        // 'tagIds',
         'snapshots',
+        'coverImageUrl',
+        'bullets',
+        'shortDescription'
       ] as any;
+
+      // Handle Age Groups
+      if (dto.ageGroupIds) {
+        const ageGroupsRepo = qr.manager.getRepository<AgeGroup>(AgeGroup);
+        const ageGroups = await ageGroupsRepo.findBy({
+          id: In(dto.ageGroupIds),
+        });
+        bookPatch.ageGroups = ageGroups;
+      }
+
+      // Handle Categories (if provided)
+      if (dto.categoryIds) {
+        const categoryRepo = qr.manager.getRepository<Category>(Category);
+        const categories = await categoryRepo.findBy({
+          id: In(dto.categoryIds),
+        });
+        bookPatch.categories = categories;
+      }
+
+      // Handle Tags (if provided)
+      if (dto.tagIds) {
+        const tagRepo = qr.manager.getRepository<Tag>(Tag);
+        const tags = await tagRepo.findBy({
+          id: In(dto.tagIds),
+        });
+        bookPatch.tags = tags;
+      }
 
       for (const f of updatableFields) {
         if ((dto as any)[f] !== undefined) {
@@ -806,98 +867,128 @@ export class BooksService {
       }
 
       // Attach uploaded new URLs if any (replace behavior)
-      if (newCoverUrl) bookPatch.coverImageUrl = newCoverUrl;
+      if (newCoverUrl) {
+        bookPatch.coverImageUrl = newCoverUrl;
+      } else if (dto.coverImageUrl !== undefined) {
+        // If no file uploaded but URL provided in DTO
+        bookPatch.coverImageUrl = dto.coverImageUrl;
+      }
+
       if (newSnapshotUrls) {
         bookPatch.snapshotUrls = newSnapshotUrls;
         bookPatch.snapshots = newSnapshotUrls;
+      } else if (dto.snapshots) {
+        // If no files uploaded but URLs provided in DTO
+        bookPatch.snapshotUrls = dto.snapshots;
+        bookPatch.snapshots = dto.snapshots;
       }
 
       // update the book
+      // update the book
       const merged = bookRepo.merge(existing, bookPatch);
-      const savedBook = await bookRepo.save(merged);
+      // Explicitly assign relations to ensure merge didn't drop them
+      if (bookPatch.ageGroups) merged.ageGroups = bookPatch.ageGroups;
+      if (bookPatch.categories) merged.categories = bookPatch.categories;
+      if (bookPatch.tags) merged.tags = bookPatch.tags;
 
-      // 2.b handle variants (hybrid)
-      // fetch existing variants freshest via queryRunner (ensure we operate on tx snapshot)
-      const variantRepo = qr.manager.getRepository(BookFormatVariant as any);
-      const existingVariants: any[] = await variantRepo.find({ where: { book: { id: savedBook.id } } });
+      const savedBook = await qr.manager.save(merged);
 
-      const dtoVariants = dto.variants ?? [];
-
-      // Build maps for existing variants by id
-      const existingById = new Map<number, any>();
-      for (const v of existingVariants) existingById.set(v.id, v);
-
-      // Track which existing IDs are kept (present in DTO) — those not kept will be deleted
-      const keepIds = new Set<number>();
-
-      // Entities to create and update
+      // --- 3. Variants Update Logic (Hybrid: Match by ID -> Match by Format -> Create New -> Delete Leftovers)
       const variantsToCreate: Partial<BookFormatVariant>[] = [];
-      const variantsToUpdate: any[] = [];
+      const variantsToUpdate: { entity: BookFormatVariant; dto: any; fileUrl?: string | null }[] = [];
 
-      for (let i = 0; i < dtoVariants.length; i++) {
-        const vDto = dtoVariants[i];
-        if (vDto.id) {
-          // update existing variant
-          const existingV = existingById.get(vDto.id);
-          if (!existingV) {
-            // Provided id does not belong to this book
-            throw new BadRequestException(`Variant id ${vDto.id} not found for book ${bookId}`);
-          }
-          keepIds.add(vDto.id);
+      // Track which existing variants are "claimed" by the incoming DTO
+      const claimedExistingIds = new Set<number>();
 
-          const updatePayload: Partial<BookFormatVariant> = {};
-          if (vDto.format !== undefined) updatePayload.format = vDto.format;
-          if ((vDto as any).priceCents !== undefined) updatePayload.price = (vDto as any).priceCents / 100;
-          if (vDto.stockQuantity !== undefined) updatePayload.stockQuantity = vDto.stockQuantity;
-          if (vDto.isbn !== undefined) updatePayload.isbn = vDto.isbn;
+      // 3.a Process incoming DTO variants
+      if (dto.variants) {
+        dto.variants.forEach((vDto, i) => {
+          let matchedVariant: BookFormatVariant | undefined;
 
-          // Replace fileUrl if a new file was uploaded for this index
-          if (variantNewFileUrls[i]) {
-            updatePayload.fileUrl = variantNewFileUrls[i]!;
-          } else if (vDto.fileUrl !== undefined) {
-            // if DTO explicitly supplies fileUrl, use it (rare)
-            updatePayload.fileUrl = vDto.fileUrl;
+          // Strategy 1: Match by ID (Explicit)
+          if (vDto.id) {
+            matchedVariant = existing.formats?.find(ev => ev.id === vDto.id);
           }
 
-          // merge on existingV and prepare save
-          const mergedV = qr.manager.merge(BookFormatVariant as any, existingV, updatePayload);
-          variantsToUpdate.push(mergedV);
-        } else {
-          // create new variant
-          const createPayload: Partial<BookFormatVariant> = {
-            book: savedBook,
-            format: vDto.format,
-            price: (vDto as any).priceCents !== undefined ? (vDto as any).priceCents / 100 : 0,
-            stockQuantity: vDto.stockQuantity ?? 0,
-            reservedQuantity: 0,
-            fileUrl: variantNewFileUrls[i] ?? vDto.fileUrl ?? null,
-            isbn: vDto.isbn ?? null,
-          };
-          variantsToCreate.push(createPayload);
+          // Strategy 2: Match by Format (Implicit, if ID not provided or not found)
+          // Only match if this existing variant hasn't been claimed yet
+          if (!matchedVariant && vDto.format) {
+            matchedVariant = existing.formats?.find(ev =>
+              ev.format === vDto.format && !claimedExistingIds.has(ev.id)
+            );
+          }
+
+          if (matchedVariant) {
+            // Update existing
+            claimedExistingIds.add(matchedVariant.id);
+            variantsToUpdate.push({
+              entity: matchedVariant,
+              dto: vDto,
+              fileUrl: variantNewFileUrls[i]
+            });
+          } else {
+            // Create new
+            const createPayload: Partial<BookFormatVariant> = {
+              book: savedBook,
+              format: vDto.format,
+              price: (vDto as any).priceCents !== undefined ? (vDto as any).priceCents / 100 : 0,
+              stockQuantity: isPhysicalFormat(vDto.format as any) ? (vDto.stockQuantity ?? 0) : 0,
+              reservedQuantity: 0,
+              fileUrl: variantNewFileUrls[i] ?? vDto.fileUrl ?? null,
+              isbn: vDto.isbn ?? null,
+            };
+            variantsToCreate.push(createPayload);
+          }
+        });
+      }
+
+      // 3.b Apply Updates
+      for (const item of variantsToUpdate) {
+        const { entity, dto: vDto, fileUrl } = item;
+        const updatePayload: Partial<BookFormatVariant> = {};
+
+        if (vDto.format !== undefined) updatePayload.format = vDto.format;
+        if ((vDto as any).priceCents !== undefined) updatePayload.price = (vDto as any).priceCents / 100;
+        if (vDto.stockQuantity !== undefined) {
+          const effectiveFormat = vDto.format ?? entity.format;
+          updatePayload.stockQuantity = isPhysicalFormat(effectiveFormat as any) ? vDto.stockQuantity : 0;
         }
-      }
+        if (vDto.isbn !== undefined) updatePayload.isbn = vDto.isbn;
 
-      // Determine deletes: existing variants whose id is NOT in keepIds
-      const variantsToDelete = existingVariants.filter((v) => !keepIds.has(v.id));
-
-      // Save updates & creations inside same transaction
-      if (variantsToUpdate.length > 0) {
-        // bulk save updates (TypeORM will issue updates)
-        await qr.manager.save(BookFormatVariant as any, variantsToUpdate);
-      }
-
-      if (variantsToCreate.length > 0) {
-        const created = await qr.manager.save(BookFormatVariant as any, variantsToCreate);
-      }
-
-      if (variantsToDelete.length > 0) {
-        const deleteIds = variantsToDelete.map((v) => v.id);
-        await qr.manager.delete(BookFormatVariant as any, deleteIds);
-        // schedule deletion of files for deleted variants after commit
-        for (const v of variantsToDelete) {
-          if (v.fileUrl) {
-            const k = extractKey(v.fileUrl);
+        // Replace fileUrl if a new file was uploaded
+        if (fileUrl) {
+          updatePayload.fileUrl = fileUrl;
+          // Mark old file for deletion
+          if (entity.fileUrl) {
+            const k = extractKey(entity.fileUrl);
             if (k) oldKeysToDeleteAfterCommit.push(k);
+          }
+        } else if (vDto.fileUrl !== undefined) {
+          // If DTO explicitly sends fileUrl string (or null)
+          updatePayload.fileUrl = vDto.fileUrl;
+        }
+
+        await qr.manager.update(BookFormatVariant, { id: entity.id }, updatePayload);
+      }
+
+      // 3.c Create New
+      if (variantsToCreate.length > 0) {
+        await qr.manager.save(BookFormatVariant, variantsToCreate);
+      }
+
+      // 3.d Delete Unclaimed (only if variants were provided in DTO)
+      if (dto.variants !== undefined) {
+        const variantsToDelete = existing.formats?.filter(ev => !claimedExistingIds.has(ev.id)) ?? [];
+        if (variantsToDelete.length > 0) {
+          const deleteIds = variantsToDelete.map(v => v.id);
+          await qr.manager.delete(BookFormatVariant, deleteIds);
+
+          // schedule deletion of files for deleted variants after commit
+          for (const v of variantsToDelete) {
+            if (v.fileUrl) {
+              const k = extractKey(v.fileUrl);
+              if (k) oldKeysToDeleteAfterCommit.push(k);
+            }
           }
         }
       }
@@ -918,7 +1009,7 @@ export class BooksService {
       // Return reloaded book with relations
       const updated = await this.bookRepository.findOne({
         where: { id: savedBook.id },
-        relations: ['formats', 'categories', 'tags', 'metrics', 'author'],
+        relations: ['formats', 'categories', 'tags', 'metrics', 'author', 'ageGroups'],
       });
 
       this.logger.log(`updateBook: updated book ${savedBook.id}`);
@@ -948,8 +1039,6 @@ export class BooksService {
       await qr.release();
     }
   }
-
-
 
   async deleteBook(id: string, options: DeleteOption) {
     const result = await this.deleteBookProvider.deleteBook(id, options);

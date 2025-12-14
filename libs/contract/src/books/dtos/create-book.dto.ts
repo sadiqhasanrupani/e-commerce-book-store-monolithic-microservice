@@ -21,6 +21,17 @@ export class CreateBookDto {
   @IsString()
   description?: string;
 
+  /** Short description for cards/previews. */
+  @IsOptional()
+  @IsString()
+  shortDescription?: string;
+
+  /** Key selling points or learning outcomes. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  bullets?: string[];
+
   /** Genre (Enum). */
   @IsOptional()
   @IsEnum(BookGenre)

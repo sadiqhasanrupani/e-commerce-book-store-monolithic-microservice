@@ -27,6 +27,9 @@ export class BookResponseDto {
   description: string;
 
   @ApiProperty({ nullable: true })
+  shortDescription?: string;
+
+  @ApiProperty({ nullable: true })
   longDescription?: string;
 
   @ApiProperty({ nullable: true })
@@ -41,6 +44,9 @@ export class BookResponseDto {
   @ApiProperty({ example: 4.5 })
   rating: number;
 
+  @ApiProperty({ nullable: true })
+  genre?: string;
+
   @ApiProperty()
   isBestseller: boolean;
 
@@ -52,4 +58,22 @@ export class BookResponseDto {
 
   @ApiProperty({ type: [BookVariantResponseDto] })
   variants: BookVariantResponseDto[];
+
+  @ApiProperty({ required: false, enum: ['public', 'private', 'draft'] })
+  visibility?: 'public' | 'private' | 'draft';
+
+  @ApiProperty({ required: false })
+  isArchived?: boolean;
+
+  @ApiProperty({ required: false, type: [String] })
+  bullets?: string[];
+
+  @ApiProperty({ required: false, type: [String] })
+  ageGroupIds?: string[];
+
+  @ApiProperty({ required: false, type: [String] })
+  categoryIds?: string[];
+
+  @ApiProperty({ required: false, type: [String] })
+  tagIds?: string[];
 }

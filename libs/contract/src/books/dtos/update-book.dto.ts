@@ -18,6 +18,15 @@ export class UpdateBookDto {
   description?: string;
 
   @IsOptional()
+  @IsString()
+  shortDescription?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  bullets?: string[];
+
+  @IsOptional()
   @IsEnum(BookGenre)
   genre?: BookGenre;
 
@@ -85,6 +94,16 @@ export class UpdateBookDto {
   @IsArray()
   @IsUUID('all', { each: true })
   tagIds?: string[];
+
+  /** Age Group IDs (e.g. "3-5") */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  ageGroupIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  coverImageUrl?: string;
 
   /** Hybrid variant update */
   @IsOptional()
