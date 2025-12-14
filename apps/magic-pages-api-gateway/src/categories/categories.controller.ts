@@ -1,5 +1,5 @@
 import { Controller, Get, Param, Query, Ip, Headers } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags, ApiParam } from '@nestjs/swagger';
+import { ApiOperation, ApiTags, ApiParam } from '@nestjs/swagger';
 import { CategoriesService } from './providers/categories.service';
 import { BooksService } from '../books/providers/books.service';
 import { Auth } from '../auth/decorator/auth.decorator';
