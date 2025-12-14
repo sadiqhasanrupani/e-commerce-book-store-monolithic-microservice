@@ -25,7 +25,7 @@ export class CreateBookProvider {
     private readonly findBookProvider: FindBookProvider,
     private readonly uploadBookFilesProvider: UploadBookFilesProvider,
     private readonly dataSource: DataSource,
-  ) {}
+  ) { }
 
   /**
    * Create book with DB-level protection against race conditions.
@@ -263,6 +263,7 @@ export class CreateBookProvider {
         authorName: dto.authorName ?? dto.author?.name ?? undefined,
         coverImageUrl: ur?.coverUrl ?? dto.coverImageUrl ?? undefined,
         snapshotUrls: ur?.snapshotUrls && ur.snapshotUrls.length ? ur.snapshotUrls : dto.snapshotUrls,
+        snapshots: ur?.snapshotUrls && ur.snapshotUrls.length ? ur.snapshotUrls : dto.snapshots,
         slug: dto.slug,
         metaTitle: dto.metaTitle,
         metaDescription: dto.metaDescription,

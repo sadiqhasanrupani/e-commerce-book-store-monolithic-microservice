@@ -35,6 +35,9 @@ export class BookResponseDto {
   @ApiProperty({ type: [String], nullable: true })
   snapshotUrls?: string[];
 
+  @ApiProperty({ type: [String], nullable: true })
+  snapshots?: string[];
+
   @ApiProperty({ example: 4.5 })
   rating: number;
 

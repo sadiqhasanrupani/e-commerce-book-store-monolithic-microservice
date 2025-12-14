@@ -338,6 +338,7 @@ export class BooksService {
         authorName: createBookDto.authorName ?? createBookDto.author?.name ?? undefined,
         coverImageUrl: coverImageUrl ?? createBookDto.coverImageUrl ?? undefined,
         snapshotUrls: snapshotUrls.length ? snapshotUrls : createBookDto.snapshotUrls,
+        snapshots: snapshotUrls.length ? snapshotUrls : createBookDto.snapshots,
         slug: createBookDto.slug,
         metaTitle: createBookDto.metaTitle,
         metaDescription: createBookDto.metaDescription,
@@ -794,6 +795,7 @@ export class BooksService {
         'visibility',
         'categoryIds',
         'tagIds',
+        'snapshots',
       ] as any;
 
       for (const f of updatableFields) {
@@ -805,7 +807,10 @@ export class BooksService {
 
       // Attach uploaded new URLs if any (replace behavior)
       if (newCoverUrl) bookPatch.coverImageUrl = newCoverUrl;
-      if (newSnapshotUrls) bookPatch.snapshotUrls = newSnapshotUrls;
+      if (newSnapshotUrls) {
+        bookPatch.snapshotUrls = newSnapshotUrls;
+        bookPatch.snapshots = newSnapshotUrls;
+      }
 
       // update the book
       const merged = bookRepo.merge(existing, bookPatch);
@@ -814,7 +819,7 @@ export class BooksService {
       // 2.b handle variants (hybrid)
       // fetch existing variants freshest via queryRunner (ensure we operate on tx snapshot)
       const variantRepo = qr.manager.getRepository(BookFormatVariant as any);
-      const existingVariants: any[] = await variantRepo.find({ where: { bookId: savedBook.id } });
+      const existingVariants: any[] = await variantRepo.find({ where: { book: { id: savedBook.id } } });
 
       const dtoVariants = dto.variants ?? [];
 

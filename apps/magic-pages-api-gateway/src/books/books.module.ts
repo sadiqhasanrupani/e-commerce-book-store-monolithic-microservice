@@ -9,6 +9,7 @@ import { AuthModule } from '../auth/auth.module';
 
 // controllers
 import { BooksController } from './books.controller';
+import { BooksAdminController } from './books-admin.controller';
 
 // providers
 import { BooksService } from './providers/books.service';
@@ -37,7 +38,7 @@ import { STORAGE_CONFIG } from '@app/contract/storage/configs/storage.config';
     PaginationModule,
     AuthModule,
   ],
-  controllers: [BooksController],
+  controllers: [BooksController, BooksAdminController],
   providers: [BooksService, CreateBookProvider, UploadBookFilesProvider, DeleteBookProvider, FindBookProvider],
   exports: [BooksService, TypeOrmModule],
 })

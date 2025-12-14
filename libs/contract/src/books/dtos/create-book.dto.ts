@@ -1,4 +1,4 @@
-import { IsEnum, IsString, MaxLength, IsOptional, IsArray, IsBoolean, ValidateNested, IsUUID } from 'class-validator';
+import { IsEnum, IsString, MaxLength, IsOptional, IsArray, IsBoolean, ValidateNested, IsUUID, IsUrl } from 'class-validator';
 import { Type } from 'class-transformer';
 import { BookGenre } from '../enums/book-genres.enum';
 import { CreateAuthorDto } from '../../author/dtos/create-author.dto';
@@ -69,6 +69,13 @@ export class CreateBookDto {
   @IsArray()
   @IsString({ each: true })
   snapshotUrls?: string[];
+
+  /** Snapshots gallery URLs */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @IsUrl({}, { each: true })
+  snapshots?: string[];
 
   /** Visibility: public | private | draft */
   @IsOptional()

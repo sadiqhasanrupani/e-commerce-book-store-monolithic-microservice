@@ -9,6 +9,7 @@ import {
   ManyToMany,
   JoinTable,
   Index,
+  DeleteDateColumn,
 } from 'typeorm';
 
 import { Author } from '@app/contract/author/entities/author.entity';
@@ -53,6 +54,11 @@ export class Book {
   @Column({ type: 'text', array: true, nullable: true })
   snapshotUrls?: string[];
 
+
+
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  snapshots: string[];
+
   @Column({ length: 200, nullable: true })
   slug?: string;
 
@@ -89,7 +95,9 @@ export class Book {
   @Column({ type: 'timestamptz', nullable: true })
   archivedAt?: Date;
 
-  @Column({ type: 'timestamptz', nullable: true })
+
+
+  @DeleteDateColumn()
   deletedAt?: Date;
 
   @Column({ type: 'tsvector', nullable: true })
