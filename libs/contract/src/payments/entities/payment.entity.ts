@@ -7,7 +7,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { Order } from '@app/contract/orders/entities/order.entity';
+import { Order } from '../../orders/entities/order.entity';
 
 @Entity('payments')
 export class Payment {
