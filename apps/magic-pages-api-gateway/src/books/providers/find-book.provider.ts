@@ -401,9 +401,39 @@ export class FindBookProvider {
 
     try {
       const qb = this.baseQb(includeArchived, includePrivate)
+        .select([
+          'book.id',
+          'book.title',
+          'book.authorName',
+          'book.genre',
+          'book.description',
+          'book.shortDescription', // Added
+          'book.bullets',          // Added
+          'book.isNewRelease',
+          'book.slug',
+          'book.metaTitle',
+          'book.metaDescription',
+          'book.coverImageUrl',
+          'book.snapshots',        // Added
+          'book.snapshotUrls',     // Added
+          'book.isBestseller',
+          'book.isFeatured',
+          'book.visibility',
+          'book.isArchived',       // Added
+          'book.ageGroup',
+          'book.createdAt',
+          'book.updatedAt',        // Added
+        ])
         .andWhere('book.id = :id', { id })
         .leftJoinAndSelect('book.author', 'author')
         .leftJoinAndSelect('book.formats', 'formats'); // eager load author and formats for detail
+
+      if (isAdmin) {
+        qb.leftJoinAndSelect('book.categories', 'categories');
+        qb.leftJoinAndSelect('book.ageGroups', 'ageGroups');
+        qb.leftJoinAndSelect('book.tags', 'tags');
+      }
+
 
       const book = await qb.getOne();
 

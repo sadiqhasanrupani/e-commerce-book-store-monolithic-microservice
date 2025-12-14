@@ -15,6 +15,12 @@ export class BookResponseDto {
   slug: string;
 
   @ApiProperty({ nullable: true })
+  metaTitle?: string;
+
+  @ApiProperty({ nullable: true })
+  metaDescription?: string;
+
+  @ApiProperty({ nullable: true })
   authorName?: string;
 
   @ApiProperty({ nullable: true })

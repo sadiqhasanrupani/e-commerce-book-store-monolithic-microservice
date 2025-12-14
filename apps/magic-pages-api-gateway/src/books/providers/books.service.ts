@@ -605,6 +605,8 @@ export class BooksService {
       title: book.title,
       subtitle: book.subtitle ?? undefined,
       slug: book.slug ?? '',
+      metaTitle: book.metaTitle ?? undefined,
+      metaDescription: book.metaDescription ?? undefined,
       authorName: book.authorName ?? undefined,
       genre: book.genre,
       // publisher: book.publisher, // Missing in entity
@@ -665,6 +667,8 @@ export class BooksService {
     });
 
     if (!existing) throw new NotFoundException(`Book ${bookId} not found`);
+
+    console.log('[DEBUG] Existed book details: ', existing);
 
     // Prepare trackers for storage ops
     const newlyUploadedKeys: string[] = []; // keys of newly uploaded files (to cleanup if failure)
@@ -776,9 +780,10 @@ export class BooksService {
           }
         }
       }
+
     } catch (uploadErr) {
       // If upload fails, attempt to cleanup newly uploaded keys and throw
-      this.logger.error('updateBook: upload failed, cleaning up new uploads', uploadErr);
+      console.error('updateBook: upload failed, cleaning up new uploads', uploadErr);
       if (newlyUploadedKeys.length && typeof this.uploadBookFilesProvider.deleteObjects === 'function') {
         try {
           await this.uploadBookFilesProvider.deleteObjects(newlyUploadedKeys);
@@ -824,8 +829,9 @@ export class BooksService {
         'allowWishlist',
         'allowWishlist',
         'visibility',
-        // 'categoryIds', // Removing these from simple fields as they are relations
-        // 'tagIds',
+        'categoryIds', // Removing these from simple fields as they are relations
+        'tagIds',
+        'ageGroups',
         'snapshots',
         'coverImageUrl',
         'bullets',
@@ -838,6 +844,10 @@ export class BooksService {
         const ageGroups = await ageGroupsRepo.findBy({
           id: In(dto.ageGroupIds),
         });
+
+        // console.log("[DEBUG]: ageGroupd id: ", dto.ageGroupIds)
+        // console.log("[DEBUG]: ageGroupd id: ", ageGroups)
+
         bookPatch.ageGroups = ageGroups;
       }
 
