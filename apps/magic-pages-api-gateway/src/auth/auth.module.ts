@@ -7,6 +7,7 @@ import { GlobalConfigModule } from '@app/global-config';
 
 // controllers
 import { AuthController } from './auth.controller';
+import { AuthAdminController } from './auth-admin.controller';
 
 // providers
 import { AuthService } from './providers/auth.service';
@@ -30,7 +31,7 @@ import { UserContextService } from './providers/user-context.service';
     RmqModule.registerAsync(),
     TypeOrmModule.forFeature([EmailVerification, User]),
   ],
-  controllers: [AuthController, EmailConsumer],
+  controllers: [AuthController, AuthAdminController, EmailConsumer],
   providers: [
     AuthService,
     MailService,
