@@ -43,7 +43,10 @@ export class BooksAdminController {
     const userContext = this.userContextService.resolveContext(clientIp);
     // Explicitly pass isAdmin if supported, or rely on service logic.
     // booksService.findAll takes (query, options). Options can have isAdmin.
-    return this.booksService.findAll(query, { isAdmin: true, userContext });
+    return this.booksService.findAll(
+      { ...query, page: query.page ?? 1, limit: query.limit ?? 10 },
+      { isAdmin: true, userContext },
+    );
   }
 
   @Post()
@@ -68,7 +71,11 @@ export class BooksAdminController {
   @Get(':id')
   @ApiOperation({ summary: 'Get full details for editing' })
   async findOne(@Param('id') id: string) {
-    return this.booksService.findOne(id, { isAdmin: true });
+    return this.booksService.findOne(id, {
+      isAdmin: true,
+      includeArchived: true,
+      includePrivate: true,
+    });
   }
 
   @Put(':id')
