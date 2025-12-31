@@ -56,7 +56,7 @@ describe('FindBookProvider', () => {
   it('should use Full-Text Search when q is provided and results exist', async () => {
     mockQueryBuilder.getCount.mockResolvedValue(1); // Simulate FTS hits
 
-    await provider.findAll({ q: 'Harry' });
+    await provider.findAll({ q: 'Harry', page: 1, limit: 10 });
 
     expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
       expect.stringContaining("websearch_to_tsquery"),
@@ -71,7 +71,7 @@ describe('FindBookProvider', () => {
   it('should fallback to Fuzzy Search when FTS returns 0', async () => {
     mockQueryBuilder.getCount.mockResolvedValue(0); // Simulate FTS miss
 
-    await provider.findAll({ q: 'Hary' });
+    await provider.findAll({ q: 'Hary', page: 1, limit: 10 });
 
     // First it tries FTS (clone)
     expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
@@ -89,5 +89,28 @@ describe('FindBookProvider', () => {
       expect.stringContaining("similarity"),
       "DESC"
     );
+  });
+
+
+  it('should include private books when admin requests visibility=all', async () => {
+    mockQueryBuilder.getRawAndEntities.mockResolvedValue({ entities: [], raw: [] });
+    mockQueryBuilder.getCount.mockResolvedValue(0);
+
+    await provider.findAll(
+      { visibility: 'all', page: 1, limit: 10 },
+      { isAdmin: true }
+    );
+
+    // Should call baseQb with includePrivate = true
+    // references line: if (!includePrivate) qb.andWhere('book.visibility = :visibility', { visibility: 'public' });
+    // So if includePrivate is true, that line is skipped.
+
+    // Let's verify that we DO NOT see the "book.visibility = 'public'" where clause
+    const calls = mockQueryBuilder.andWhere.mock.calls;
+    const hasPublicFilter = calls.some((args: any[]) =>
+      args[0] && args[0].includes('book.visibility = :visibility') && args[1]?.visibility === 'public'
+    );
+
+    expect(hasPublicFilter).toBe(false);
   });
 });

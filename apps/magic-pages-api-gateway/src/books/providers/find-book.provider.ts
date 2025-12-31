@@ -5,6 +5,7 @@ import { FindAllBookQueryParam, FindOneBookOption } from '@app/contract/books/ty
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Book } from '@app/contract/books/entities/book.entity';
+import { FindAllBookDto } from '@app/contract/books/dtos/find-all-book.dto';
 
 /**
  * FindBookProvider
@@ -74,7 +75,7 @@ export class FindBookProvider {
    *
    * Returns `{ meta, data }` where `meta` contains pagination metadata.
    */
-  async findAll(queryParams?: FindAllBookQueryParam, options?: { isAdmin?: boolean }) {
+  async findAll(queryParams?: FindAllBookDto, options?: { isAdmin?: boolean }) {
     const {
       page = 1,
       limit = 10,
@@ -102,11 +103,10 @@ export class FindBookProvider {
     const isAdmin = !!options?.isAdmin;
     const effectiveIncludeArchived = isAdmin ? includeArchived : false;
     const effectiveIncludePrivate = isAdmin
-      ? visibility === 'private' || visibility === 'draft'
+      ? visibility === 'private' || visibility === 'draft' || visibility === 'all'
         ? true
         : false
       : false;
-
     const safeLimit = Math.min(Math.max(limit, 1), 50);
     const safePage = Math.max(page, 1);
     const skip = (safePage - 1) * safeLimit;
@@ -122,6 +122,7 @@ export class FindBookProvider {
       'isBestseller',
       'isFeatured',
     ]);
+
     const orderField = allowedSortFields.has(String(sortBy)) ? String(sortBy) : 'createdAt';
     const orderDirection = sortOrder?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
@@ -239,8 +240,8 @@ export class FindBookProvider {
         qb.andWhere('book.isFeatured = :isFeatured', { isFeatured });
       }
 
-      if (isBestseller !== undefined) {
-        qb.andWhere('book.isBestseller = :isBestseller', { isBestseller });
+      if (isBestseller !== undefined || (queryParams as any).isBestSeller !== undefined) {
+        qb.andWhere('book.isBestseller = :isBestseller', { isBestseller: isBestseller ?? (queryParams as any).isBestSeller });
       }
 
       if (isNewRelease !== undefined) {
