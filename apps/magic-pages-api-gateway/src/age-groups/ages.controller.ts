@@ -28,7 +28,12 @@ export class AgesController {
     @Headers('x-forwarded-for') xForwardedFor: string,
   ) {
     // Override or set the age group filter
-    const queryParams = { ...query, ageGroups: [ageGroup] };
+    const queryParams = {
+      ...query,
+      ageGroups: [ageGroup],
+      page: query.page ?? 1,
+      limit: query.limit ?? 10,
+    };
 
     const clientIp = xForwardedFor ? xForwardedFor.split(',')[0].trim() : ip;
     const userContext = this.userContextService.resolveContext(clientIp);

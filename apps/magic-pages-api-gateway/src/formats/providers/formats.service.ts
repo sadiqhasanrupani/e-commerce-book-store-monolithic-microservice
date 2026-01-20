@@ -59,9 +59,11 @@ export class FormatsService {
       }
     }
 
-    const booksQuery: FindAllBookQueryParam = {
+    const booksQuery = {
       ...query,
       formats: formatEnum ? [formatEnum] : [],
+      page: query.page ?? 1,
+      limit: query.limit ?? 10,
     };
 
     return this.booksService.findAll(booksQuery);

@@ -426,6 +426,7 @@ export class FindBookProvider {
           'book.updatedAt',        // Added
         ])
         .andWhere('book.id = :id', { id })
+        .leftJoinAndSelect('book.categories', 'categories')
         .leftJoinAndSelect('book.author', 'author')
         .leftJoinAndSelect('book.formats', 'formats'); // eager load author and formats for detail
 
@@ -434,7 +435,6 @@ export class FindBookProvider {
         qb.leftJoinAndSelect('book.ageGroups', 'ageGroups');
         qb.leftJoinAndSelect('book.tags', 'tags');
       }
-
 
       const book = await qb.getOne();
 

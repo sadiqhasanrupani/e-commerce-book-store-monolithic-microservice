@@ -51,7 +51,12 @@ export class CategoriesController {
     await this.categoriesService.findBySlug(slug);
 
     // Override or set the category filter
-    const queryParams = { ...query, categories: [slug] };
+    const queryParams = {
+      ...query,
+      categories: [slug],
+      page: query.page ?? 1,
+      limit: query.limit ?? 10,
+    };
 
     const clientIp = xForwardedFor ? xForwardedFor.split(',')[0].trim() : ip;
     const userContext = this.userContextService.resolveContext(clientIp);

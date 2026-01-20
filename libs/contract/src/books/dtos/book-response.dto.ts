@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { BookVariantResponseDto } from './book-variant-response.dto';
+import { Category } from '../entities/categories.entity';
 
 export class BookResponseDto {
   @ApiProperty()
@@ -79,6 +80,9 @@ export class BookResponseDto {
 
   @ApiProperty({ required: false, type: [String] })
   categoryIds?: string[];
+
+  @ApiProperty({ required: false, type: [String] })
+  categories?: Category[];
 
   @ApiProperty({ required: false, type: [String] })
   tagIds?: string[];

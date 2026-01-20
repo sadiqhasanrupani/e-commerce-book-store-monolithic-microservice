@@ -60,8 +60,6 @@ export class Book {
   @Column({ type: 'text', array: true, nullable: true })
   snapshotUrls?: string[];
 
-
-
   @Column({ type: 'jsonb', nullable: true, default: [] })
   snapshots: string[];
 

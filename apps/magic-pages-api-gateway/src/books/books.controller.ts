@@ -15,7 +15,10 @@ import {
   ParseUUIDPipe,
   Ip,
   Headers,
+  UsePipes,
 } from '@nestjs/common';
+import { ZodValidationPipe } from 'nestjs-zod'
+
 
 import { BooksService } from './providers/books.service';
 
@@ -35,6 +38,7 @@ import { FindAllBookQueryParam, FindAllBookResponse } from '@app/contract/books/
 import { Auth } from '../auth/decorator/auth.decorator';
 import { AuthTypes } from '@app/contract/auth/enums/auth-types.enum';
 import { UserContextService } from '../auth/providers/user-context.service';
+import { FindAllBookDto } from '@app/contract/books/dtos/find-all-book.dto';
 
 @ApiTags('Books')
 @Controller('books')
@@ -192,6 +196,7 @@ export class BooksController {
   @Auth(AuthTypes.NONE)
   @Role(RoleTypes.NONE)
   @Get()
+  // @UsePipes(ZodValidationPipe)
   @ApiOperation({
     summary: 'List books with pagination, filtering, sorting',
   })
@@ -200,12 +205,13 @@ export class BooksController {
     description: 'Paginated book list',
   })
   async findAll(
-    @Query() query: FindAllBookQueryParam,
+    @Query() query: FindAllBookDto,
     @Ip() ip: string,
     @Headers('x-forwarded-for') xForwardedFor: string,
   ): Promise<FindAllBookResponse> {
     const clientIp = xForwardedFor ? xForwardedFor.split(',')[0].trim() : ip;
     const userContext = this.userContextService.resolveContext(clientIp);
+
     return this.booksService.findAll(query, { userContext });
   }
 
@@ -224,7 +230,7 @@ export class BooksController {
     description: 'List of featured books',
   })
   async getFeaturedBooks() {
-    return this.booksService.findAll({ isFeatured: true });
+    return this.booksService.findAll({ isFeatured: true, limit: 10, page: 1 });
   }
 
   // ---------------------------------------------------------------------
@@ -242,7 +248,7 @@ export class BooksController {
     description: 'Search results with facets',
   })
   async search(
-    @Query() query: FindAllBookQueryParam,
+    @Query() query: FindAllBookDto,
     @Ip() ip: string,
     @Headers('x-forwarded-for') xForwardedFor: string,
   ): Promise<FindAllBookResponse> {

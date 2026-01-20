@@ -26,7 +26,6 @@ import { In } from 'typeorm';
 import { DeleteBookProvider } from './delete-book.provider';
 import { DeleteOption } from '@app/contract/books/types/delete-book.type';
 import {
-  FindAllBookQueryParam,
   FindAllBookResponse,
   FindOneBookOption,
 } from '@app/contract/books/types/find-book.type';
@@ -36,6 +35,8 @@ import { BookFormatVariant } from '@app/contract/books/entities/book-format-vari
 import { Category } from '@app/contract/books/entities/categories.entity';
 import { Tag } from '@app/contract/books/entities/tags.entity';
 import { isPhysicalFormat } from '@app/contract/books/enums/book-format.enum';
+import { BookGenre } from '@app/contract/books/enums/book-genres.enum';
+import { FindAllBookDto } from '@app/contract/books/dtos/find-all-book.dto';
 
 type UploadAssetsResult = {
   uploadedKeys: string[];
@@ -511,7 +512,7 @@ export class BooksService {
   }
 
   async findAll(
-    queryParams?: FindAllBookQueryParam,
+    queryParams?: FindAllBookDto,
     options?: { isAdmin?: boolean; userContext?: UserContext },
   ): Promise<FindAllBookResponse> {
     const result = await this.findBookProvider.findAll(queryParams, options);
@@ -554,8 +555,9 @@ export class BooksService {
 
     // 2. Find other books with the same genre
     const result = await this.findBookProvider.findAll({
-      genre: currentBook.genre as any, // Type cast if necessary, or ensure BookGenre import
-      limit: 5, // Limit related books
+      genre: currentBook.genre as BookGenre,
+      limit: 5,
+      page: 1,
     });
 
     // 3. Filter out the current book and transform
@@ -626,7 +628,7 @@ export class BooksService {
       bullets: book.bullets,
       shortDescription: book.shortDescription,
       ageGroupIds: book.ageGroups?.map(ag => ag.id) ?? [],
-      categoryIds: book.categories?.map(c => c.id) ?? [],
+      categories: book.categories,
       tagIds: book.tags?.map(t => t.id) ?? [],
     };
   }
