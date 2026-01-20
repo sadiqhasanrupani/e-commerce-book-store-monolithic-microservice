@@ -14,10 +14,12 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { CartService } from './providers/cart.service';
+import { CartMergeService } from './providers/cart-merge.service';
 import { CreateCartItemDto } from '@app/contract/carts/dtos/create-cart-item.dto';
 import { UpdateCartItemDto } from '@app/contract/carts/dtos/update-cart-item.dto';
 import { CartResponseDto } from '@app/contract/carts/dtos/cart-response.dto';
 import { CheckoutDto } from '@app/contract/carts/dtos/checkout.dto';
+import { MergeCartRequestDto, MergeCartResponseDto } from '@app/contract/carts/dtos/merge-cart.dto';
 import { CheckoutService } from './providers/checkout.service';
 import { Auth } from '../auth/decorator/auth.decorator';
 import { AuthTypes } from '@app/contract/auth/enums/auth-types.enum';
@@ -32,6 +34,7 @@ export class CartController {
   constructor(
     private readonly cartService: CartService,
     private readonly checkoutService: CheckoutService,
+    private readonly cartMergeService: CartMergeService,
   ) { }
 
   @Get()
@@ -77,6 +80,17 @@ export class CartController {
     return this.cartService.clearCart(req.user.userId);
   }
 
+  @Post('merge')
+  @ApiOperation({ summary: 'Merge guest cart into authenticated user cart' })
+  @ApiResponse({ status: 200, description: 'Cart merged successfully', type: MergeCartResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid request' })
+  async mergeCart(
+    @Request() req,
+    @Body() dto: MergeCartRequestDto,
+  ): Promise<MergeCartResponseDto> {
+    return this.cartMergeService.mergeCart(req.user.userId, dto);
+  }
+
   @Post('checkout')
   @ApiOperation({ summary: 'Checkout cart' })
   @ApiResponse({ status: 201, description: 'Checkout initiated' })
@@ -86,3 +100,4 @@ export class CartController {
     return this.checkoutService.checkout(req.user.userId, dto, idempotencyKey);
   }
 }
+

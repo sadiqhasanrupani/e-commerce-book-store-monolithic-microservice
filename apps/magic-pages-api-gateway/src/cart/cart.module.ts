@@ -3,32 +3,39 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
+import { RedisModule } from '@app/redis';
+import { ConfigService } from '@nestjs/config';
+import { makeCounterProvider, makeGaugeProvider, makeHistogramProvider } from '@willsoto/nestjs-prometheus';
+import Redis from 'ioredis';
+
 import { CartController } from './cart.controller';
-import { PaymentWebhookController } from './payment-webhook.controller';
+import { GuestCartController } from './guest-cart.controller';
 import { TransactionsController } from './transactions.controller';
+import { PaymentWebhookController } from './payment-webhook.controller';
+
 import { CartService } from './providers/cart.service';
+import { CartMergeService } from './providers/cart-merge.service';
 import { ReservationWorkerService } from './providers/reservation-worker.service';
+import { CheckoutService } from './providers/checkout.service';
+import { CartMetricsService } from './metrics/cart-metrics.service';
+import { PaymentReconciliationService } from './services/payment-reconciliation.service';
+import { OrderTimeoutService } from './services/order-timeout.service';
+
+import { PhonePeProvider } from './providers/phonepe.provider';
+import { RazorpayProvider } from './providers/razorpay.provider';
+
 import { Cart } from '@app/contract/carts/entities/cart.entity';
 import { CartItem } from '@app/contract/carts/entities/cart-item.entity';
 import { BookFormatVariant } from '@app/contract/books/entities/book-format-varient.entity';
 import { Book } from '@app/contract/books/entities/book.entity';
-import { RedisModule } from '@app/redis';
-import { ConfigService } from '@nestjs/config';
-import { TracingInterceptor } from './interceptors/tracing.interceptor';
-import { CheckoutService } from './providers/checkout.service';
-import { PhonePeProvider } from './providers/phonepe.provider';
-import { RazorpayProvider } from './providers/razorpay.provider';
 import { Order } from '@app/contract/orders/entities/order.entity';
 import { OrderItem } from '@app/contract/orders/entities/order-item.entity';
 import { OrderStatusLog } from '@app/contract/orders/entities/order-status-log.entity';
 import { Transaction } from '@app/contract/orders/entities/transaction.entity';
 import { Refund } from '@app/contract/orders/entities/refund.entity';
-import Redis from 'ioredis';
-import { makeCounterProvider, makeGaugeProvider, makeHistogramProvider } from '@willsoto/nestjs-prometheus';
-import { CartMetricsService } from './metrics/cart-metrics.service';
-import { PaymentReconciliationService } from './services/payment-reconciliation.service';
-import { OrderTimeoutService } from './services/order-timeout.service';
 
+import { TracingInterceptor } from './interceptors/tracing.interceptor';
+import { SessionIdGuard } from './guards/session-id.guard';
 
 @Module({
   imports: [
@@ -60,9 +67,10 @@ import { OrderTimeoutService } from './services/order-timeout.service';
       }),
     }),
   ],
-  controllers: [CartController, PaymentWebhookController, TransactionsController],
+  controllers: [CartController, GuestCartController, PaymentWebhookController, TransactionsController],
   providers: [
     CartService,
+    CartMergeService,
     CheckoutService,
     ReservationWorkerService,
     TracingInterceptor,

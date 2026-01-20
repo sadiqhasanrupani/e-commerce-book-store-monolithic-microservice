@@ -14,13 +14,16 @@ import { Book } from '@app/contract/books/entities/book.entity';
 import { CreateCartItemDto } from '@app/contract/carts/dtos/create-cart-item.dto';
 import { UpdateCartItemDto } from '@app/contract/carts/dtos/update-cart-item.dto';
 import { CartResponseDto, CartItemResponseDto } from '@app/contract/carts/dtos/cart-response.dto';
+import { GuestCartResponseDto } from '@app/contract/carts/dtos/guest-cart-response.dto';
 import { RedisService } from '@app/redis';
 import { BookFormat, isPhysicalFormat } from '@app/contract/books/enums/book-format.enum';
 import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { CartMetricsService } from '../metrics/cart-metrics.service';
 
 const CART_CACHE_TTL = 3600; // 1 hour
-const RESERVATION_TTL = 900; // 15 minutes
+const RESERVATION_TTL = 900; // 15 minutes (authenticated users)
+const GUEST_RESERVATION_TTL = 600; // 10 minutes (guest users - shorter to prevent abuse)
+const MAX_GUEST_CART_ITEMS = 20; // Limit guest cart items to prevent abuse
 
 @Injectable()
 export class CartService {
@@ -429,5 +432,201 @@ export class CartService {
   private async invalidateCartCache(userId: number): Promise<void> {
     const cacheKey = `cart:${userId}`;
     await this.redisService.del(cacheKey);
+  }
+
+  /**
+   * Invalidate guest cart cache
+   */
+  private async invalidateGuestCartCache(sessionId: string): Promise<void> {
+    const cacheKey = `guest_cart:${sessionId}`;
+    await this.redisService.del(cacheKey);
+  }
+
+  /**
+   * Add item to guest cart with pessimistic locking for stock reservation.
+   * Guest carts use sessionId instead of userId.
+   * Shorter reservation TTL (10 min) compared to authenticated carts (15 min).
+   */
+  async addToGuestCart(sessionId: string, dto: CreateCartItemDto): Promise<GuestCartResponseDto> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // Get or create guest cart
+      let cart = await queryRunner.manager.findOne(Cart, {
+        where: { sessionId, status: CartStatus.ACTIVE },
+        relations: ['items'],
+      });
+
+      if (!cart) {
+        cart = queryRunner.manager.create(Cart, {
+          sessionId,
+          userId: null,
+          status: CartStatus.ACTIVE,
+        });
+        await queryRunner.manager.save(cart);
+        cart.items = [];
+      }
+
+      // Check guest cart item limit
+      if (cart.items.length >= MAX_GUEST_CART_ITEMS) {
+        const existingItem = cart.items.find(
+          (item) => item.bookFormatVariantId === dto.bookFormatVariantId,
+        );
+        if (!existingItem) {
+          throw new BadRequestException({
+            code: 'GUEST_CART_LIMIT',
+            message: `Guest carts are limited to ${MAX_GUEST_CART_ITEMS} items. Please sign in for unlimited cart items.`,
+          });
+        }
+      }
+
+      // Lock the variant row with FOR UPDATE (pessimistic locking)
+      const variant = await queryRunner.manager
+        .createQueryBuilder(BookFormatVariant, 'variant')
+        .innerJoinAndSelect('variant.book', 'book')
+        .setLock('pessimistic_write')
+        .where('variant.id = :id', { id: dto.bookFormatVariantId })
+        .getOne();
+
+      if (!variant) {
+        throw new NotFoundException(`Book variant with ID ${dto.bookFormatVariantId} not found`);
+      }
+
+      // Check if variant is physical and needs stock reservation
+      const isPhysical = isPhysicalFormat(variant.format);
+
+      if (isPhysical) {
+        const availableStock = variant.stockQuantity - variant.reservedQuantity;
+        if (availableStock < dto.qty) {
+          throw new ConflictException({
+            message: 'Insufficient stock',
+            code: 'INSUFFICIENT_STOCK',
+            available: availableStock,
+            requested: dto.qty,
+          });
+        }
+
+        // Reserve stock
+        await queryRunner.manager.update(
+          BookFormatVariant,
+          { id: variant.id },
+          { reservedQuantity: () => `reservedQuantity + ${dto.qty}` },
+        );
+      }
+
+      // Get book details from relation
+      const book = variant.book;
+
+      // Check if item already exists in cart
+      const existingItem = await queryRunner.manager.findOne(CartItem, {
+        where: { cartId: cart.id, bookFormatVariantId: dto.bookFormatVariantId },
+      });
+
+      if (existingItem) {
+        // Update quantity
+        existingItem.qty += dto.qty;
+        await queryRunner.manager.save(existingItem);
+      } else {
+        // Create new cart item
+        const cartItem = queryRunner.manager.create(CartItem, {
+          cartId: cart.id,
+          bookFormatVariantId: dto.bookFormatVariantId,
+          qty: dto.qty,
+          unitPrice: variant.price,
+          title: book?.title || 'Unknown',
+          coverImageUrl: book?.coverImageUrl || '',
+        });
+        await queryRunner.manager.save(cartItem);
+      }
+
+      await queryRunner.commitTransaction();
+
+      // Set Redis TTL for reservation tracking (shorter for guests)
+      if (isPhysical) {
+        const reservationKey = `guest_reservation:${sessionId}:${dto.bookFormatVariantId}`;
+        await this.redisService.set(
+          reservationKey,
+          JSON.stringify({ variantId: dto.bookFormatVariantId, qty: dto.qty }),
+          GUEST_RESERVATION_TTL,
+        );
+      }
+
+      // Invalidate cache
+      await this.invalidateGuestCartCache(sessionId);
+
+      // Fetch and return updated cart
+      return this.getGuestCart(sessionId);
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  /**
+   * Get guest cart by session ID
+   */
+  async getGuestCart(sessionId: string): Promise<GuestCartResponseDto> {
+    // Try cache first
+    const cacheKey = `guest_cart:${sessionId}`;
+    const cached = await this.redisService.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    // Get cart from database
+    const cart = await this.cartRepository.findOne({
+      where: { sessionId, status: CartStatus.ACTIVE },
+      relations: ['items', 'items.bookFormatVariant', 'items.bookFormatVariant.book'],
+    });
+
+    if (!cart) {
+      // Return empty cart response for new sessions
+      const emptyResponse: GuestCartResponseDto = {
+        id: '',
+        sessionId,
+        items: [],
+        subtotal: 0,
+        itemCount: 0,
+        expiresAt: new Date(Date.now() + GUEST_RESERVATION_TTL * 1000).toISOString(),
+      };
+      return emptyResponse;
+    }
+
+    const response = this.buildGuestCartResponse(cart, sessionId);
+
+    // Cache the result (shorter TTL for guest carts)
+    await this.redisService.set(cacheKey, JSON.stringify(response), GUEST_RESERVATION_TTL);
+
+    return response;
+  }
+
+  /**
+   * Build guest cart response DTO
+   */
+  private buildGuestCartResponse(cart: Cart, sessionId: string): GuestCartResponseDto {
+    const items: CartItemResponseDto[] = cart.items.map((item) => ({
+      id: item.id,
+      bookFormatVariantId: item.bookFormatVariantId,
+      title: item.title,
+      unitPrice: Number(item.unitPrice),
+      qty: item.qty,
+      image: item.coverImageUrl || '',
+      subtotal: Number(item.unitPrice) * item.qty,
+    }));
+
+    const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+
+    return {
+      id: cart.id,
+      sessionId,
+      items,
+      subtotal,
+      itemCount: items.length,
+      expiresAt: new Date(Date.now() + GUEST_RESERVATION_TTL * 1000).toISOString(),
+    };
   }
 }
