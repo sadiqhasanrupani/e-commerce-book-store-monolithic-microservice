@@ -7,9 +7,23 @@ export class Cart {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  /**
+   * User ID for authenticated carts.
+   * Nullable to support guest carts (where sessionId is set instead).
+   * Database CHECK constraint ensures exactly one of userId/sessionId is set.
+   */
   @Index('idx_carts_user')
-  @Column({ name: 'user_id' })
-  userId: number;
+  @Column({ name: 'user_id', type: 'int', nullable: true })
+  userId: number | null;
+
+  /**
+   * Session ID for guest carts (frontend-generated UUID).
+   * Nullable to support authenticated carts (where userId is set instead).
+   * Database CHECK constraint ensures exactly one of userId/sessionId is set.
+   */
+  @Index('idx_carts_session')
+  @Column({ name: 'session_id', type: 'uuid', nullable: true })
+  sessionId: string | null;
 
   @Column({ type: 'enum', enum: CartStatus, default: CartStatus.ACTIVE })
   status: CartStatus;
@@ -26,3 +40,4 @@ export class Cart {
   @OneToMany(() => CartItem, (item) => item.cart)
   items: CartItem[];
 }
+
