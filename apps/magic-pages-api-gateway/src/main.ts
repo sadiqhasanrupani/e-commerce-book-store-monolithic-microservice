@@ -2,10 +2,10 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { MagicPagesApiGatewayModule } from './magic-pages-api-gateway.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { ValidationPipe } from '@nestjs/common';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { ConfigService } from '@nestjs/config';
 import { LoggerService } from 'libs/common/src';
+import { HybridValidationPipe } from 'libs/common/src/pipes/hybrid-validation.pipe';
 
 async function bootstrap() {
   const logger = new Logger('BootStrap')
@@ -46,61 +46,29 @@ async function bootstrap() {
 
   app.useLogger(app.get(LoggerService));
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      }
-    }),
-  );
-
-  // Connect to RabbitMQ as a microservice for event consumers
+  // Connect RabbitMQ microservice for consuming messages (e.g., email events)
   const configService = app.get(ConfigService);
-  const rabbitmqUrl = configService.get<string>('rabbitmq.url');
-  const rabbitmqQueue = configService.get<string>('rabbitmq.queue') ?? 'magic-pages-queue';
+  const rabbitmqUrl = configService.get<string>('RABBITMQ_URL');
 
-  logger.log('[Bootstrap] RabbitMQ URL:', rabbitmqUrl);
-  logger.log('[Bootstrap] RabbitMQ Queue:', rabbitmqQueue);
-
-  if (!rabbitmqUrl) {
-    logger.error('[Bootstrap] RABBITMQ_URL is not configured!');
-    throw new Error('RABBITMQ_URL environment variable is required');
-  }
-
-  try {
+  if (rabbitmqUrl) {
     app.connectMicroservice<MicroserviceOptions>({
       transport: Transport.RMQ,
       options: {
         urls: [rabbitmqUrl],
-        queue: rabbitmqQueue,
+        queue: 'magic-pages-queue',
         queueOptions: {
           durable: true,
         },
+        noAck: false, // Enable manual acknowledgment
       },
     });
-    logger.log('[Bootstrap] Microservice connection configured successfully');
-  } catch (error) {
-    logger.error('[Bootstrap] Failed to configure microservice:', error);
-    throw error;
+    logger.log('[Bootstrap] RabbitMQ microservice consumer connected');
+  } else {
+    logger.warn('[Bootstrap] RABBITMQ_URL not configured, email consumer disabled');
   }
 
-  // add a global suffix of api/v1
-  app.setGlobalPrefix(`api/${globalThis.process.env.API_VERSION}`);
-
   // adding a validation pipeline
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    }),
-  );
+  app.useGlobalPipes(new HybridValidationPipe());
 
   // enabling cors for public usage
   console.log('DEBUG: CORS_ORIGIN:', globalThis.process.env.CORS_ORIGIN);
@@ -119,6 +87,10 @@ async function bootstrap() {
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
+
+  // add a global suffix of api/v1
+  const apiVersion = configService.get<string>('API_VERSION') || 'v1';
+  app.setGlobalPrefix(`api/${apiVersion}`);
 
   // Start HTTP server first
   await app.listen(globalThis.process.env.PORT ?? 8080);

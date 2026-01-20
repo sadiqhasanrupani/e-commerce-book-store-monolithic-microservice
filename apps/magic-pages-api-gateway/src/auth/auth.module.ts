@@ -16,13 +16,13 @@ import { BcryptProvider } from './providers/bcrypt.provider';
 import { Argon2Provider } from './providers/argon2.provider';
 import { MailService } from './providers/mail.service';
 import { OtpService } from './providers/otp.service';
-// import { GoogleAuthenticationService } from './providers/google-authentication.service';
 import { EmailConsumer } from './consumers/email.consumer';
 import { RmqModule } from '@rmq/rmq';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EmailVerification } from '@app/contract/auth/entities/email-verification.entity';
-import { User } from '@app/contract/users/entities/user.entity';
 import { UserContextService } from './providers/user-context.service';
+
+import { User } from '@app/contract/users/entities/user.entity';
 
 @Module({
   imports: [
@@ -38,7 +38,6 @@ import { UserContextService } from './providers/user-context.service';
     OtpService,
     OtpService,
     UserContextService,
-    // GoogleAuthenticationService,
     {
       provide: HashingProvider,
       inject: [ConfigService],
@@ -55,4 +54,4 @@ import { UserContextService } from './providers/user-context.service';
   ],
   exports: [AuthService, HashingProvider, UserContextService],
 })
-export class AuthModule { } // eslint-disable-line
+export class AuthModule { }
