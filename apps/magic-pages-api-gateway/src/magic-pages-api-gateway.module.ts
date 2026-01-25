@@ -31,6 +31,7 @@ import { PrometheusModule } from '../../../libs/common/src/metrics';
 import { LoggerModule, RequestIdMiddleware, LoggingInterceptor } from '../../../libs/common/src/logging';
 import { MiddlewareConsumer, RequestMethod, NestModule } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { WishlistModule } from './wishlist/wishlist.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
     BrowseModule,
     BookAgeGroupsModule,
     FormatsModule,
+    WishlistModule,
   ],
   providers: [
     {
