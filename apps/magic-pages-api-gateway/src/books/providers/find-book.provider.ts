@@ -431,7 +431,6 @@ export class FindBookProvider {
         .leftJoinAndSelect('book.formats', 'formats'); // eager load author and formats for detail
 
       if (isAdmin) {
-        qb.leftJoinAndSelect('book.categories', 'categories');
         qb.leftJoinAndSelect('book.ageGroups', 'ageGroups');
         qb.leftJoinAndSelect('book.tags', 'tags');
       }
