@@ -3,13 +3,12 @@ import { Reflector } from '@nestjs/core';
 import { RoleTypes } from '@app/contract/auth/enums/role-types.enum';
 import { ROLE_TYPE_KEY } from '@app/contract/auth/constants/auth.constant';
 
-import { JwtPayload } from '@app/contract/auth/types/jwt-payload.type';
 import { AuthenticatedRequest } from '@app/contract/auth/interfaces/authenticated-request.interface';
 
 @Injectable()
 export class RoleBaseAccessTokenGuard implements CanActivate {
   private static readonly defaultRoleType = RoleTypes.NONE;
-  constructor(private readonly reflector: Reflector) {} // eslint-disable-line
+  constructor(private readonly reflector: Reflector) { } // eslint-disable-line
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
