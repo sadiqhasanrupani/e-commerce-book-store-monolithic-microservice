@@ -65,6 +65,7 @@
     "ioredis": "^5.8.2",
     "joi": "^18.0.1",
     "nest-winston": "^1.10.2",
+    "nestjs-razorpay": "^2.0.1",
     "nestjs-zod": "^5.0.1",
     "nodemailer": "^7.0.6",
     "passport": "^0.7.0",
