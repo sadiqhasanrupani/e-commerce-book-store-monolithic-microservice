@@ -1,4 +1,15 @@
-import { IsEnum, IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { PaymentProvider } from '../enums/payment-provider.enum';
 
@@ -35,13 +46,36 @@ export class AddressDto {
 }
 
 export class CheckoutDto {
+  @ApiProperty({ type: 'string' })
+  @IsString()
+  @IsNotEmpty()
+  firstName: string;
+
+  @ApiProperty({ type: 'string' })
+  @IsString()
+  @IsNotEmpty()
+  lastName: string;
+
+  @ApiProperty({ type: 'string' })
+  @IsString()
+  @IsEmail()
+  @IsNotEmpty()
+  email: string;
+
+  @ApiProperty({ type: 'boolean' })
+  @IsBoolean()
+  saveInfo: boolean;
+
   @ApiProperty({ enum: PaymentProvider })
   @IsEnum(PaymentProvider)
   @IsNotEmpty()
   paymentMethod: PaymentProvider;
 
-  @ApiProperty({ type: AddressDto })
+  @ApiProperty({ type: AddressDto, required: false })
+  @ValidateIf((o) => o.shippingAddress != null)
+  @IsOptional()
   @IsObject()
-  @IsNotEmpty()
-  shippingAddress: AddressDto;
+  @ValidateNested()
+  @Type(() => AddressDto)
+  shippingAddress?: AddressDto;
 }
