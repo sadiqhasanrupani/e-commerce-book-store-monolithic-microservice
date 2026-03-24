@@ -72,7 +72,7 @@ export class CheckoutService {
       });
 
       // Now fetch with relations (lock is already held by transaction on the cart row)
-      const cart = await queryRunner.manager.findOne(Cart, {
+      let cart = await queryRunner.manager.findOne(Cart, {
         where: { userId, status: CartStatus.ACTIVE },
         relations: ['items', 'items.bookFormatVariant'],
       });
@@ -80,10 +80,23 @@ export class CheckoutService {
       console.error(`DEBUG: Fetched cart for user ${userId}. Items: ${cart?.items?.length}`);
 
       if (!cart || cart.items.length === 0) {
-        throw new NotFoundException({
-          code: CartErrorCode.CART_NOT_FOUND,
-          message: 'Active cart not found',
+        // Cart not found as ACTIVE — check if it's stuck in CHECKOUT (from a failed previous attempt)
+        const checkoutStuckCart = await queryRunner.manager.findOne(Cart, {
+          where: { userId, status: CartStatus.CHECKOUT },
+          relations: ['items', 'items.bookFormatVariant'],
         });
+
+        if (checkoutStuckCart && checkoutStuckCart.items.length > 0) {
+          this.logger.log(`Recovering stuck CHECKOUT cart ${checkoutStuckCart.id} for user ${userId}`);
+          checkoutStuckCart.status = CartStatus.ACTIVE;
+          await queryRunner.manager.save(Cart, checkoutStuckCart);
+          cart = checkoutStuckCart;
+        } else {
+          throw new NotFoundException({
+            code: CartErrorCode.CART_NOT_FOUND,
+            message: 'Active cart not found',
+          });
+        }
       }
 
       if (cart.items.length === 0) {
@@ -233,22 +246,31 @@ export class CheckoutService {
           savedTransaction = await this.transactionRepository.save(transaction);
         } catch (error) {
           if (error.code === '23505') { // Unique constraint violation (Postgres)
-            this.logger.log(`Idempotency hit for key ${idempotencyKey}`);
+            this.logger.log(`Idempotency hit during save for key ${idempotencyKey}`);
+            // Find the existing transaction and reuse it
             const existingTxn = await this.transactionRepository.findOne({ where: { idempotency_key: idempotencyKey } });
-            if (existingTxn && existingTxn.raw_response) {
-              return existingTxn.raw_response as PaymentInitiationResponse;
+
+            if (existingTxn) {
+              this.logger.log(`Reusing transaction ${existingTxn.id} for idempotency key ${idempotencyKey}`);
+              savedTransaction = existingTxn;
+
+              // If it already has a raw response (like Razorpay order), just return it
+              if (existingTxn.raw_response) {
+                return existingTxn.raw_response as PaymentInitiationResponse;
+              }
+            } else {
+              throw new ConflictException('Concurrent duplicate request detected');
             }
-            // Should not happen if constraint fired, but safe fallback
-            throw new ConflictException('Concurrent duplicate request detected');
+          } else {
+            throw error;
           }
-          throw error;
         }
 
         const paymentResponse = await provider.initiatePayment({
           orderId: savedTransaction.id, // Use Transaction UUID for uniqueness and retry support
           amount: totalAmount,
           currency: currency,
-          customerPhone: dto.shippingAddress.phone,
+          customerPhone: dto.shippingAddress?.phone || '',
           callbackUrl: `${process.env.APP_URL}/cart/webhook/payment`, // Backend Webhook
           redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment/return?orderId=${savedOrder.id}`, // Frontend Return Page
           metadata: { userId, cartId: cart.id, transactionId: savedTransaction.id },
@@ -264,19 +286,29 @@ export class CheckoutService {
         this.metricsService.observeCheckoutDuration((Date.now() - startTime) / 1000);
         return paymentResponse;
       } catch (error) {
-        // If payment initiation fails, we might want to fail the order or keep it pending?
-        // For now, let's log and rethrow. The order exists in PENDING state.
-        // User can retry payment.
+        // Since DB transaction was already committed at line 209, we don't rollback here.
         this.logger.error(`Payment initiation failed for order ${savedOrder.id}`, error);
-        throw error;
+        throw error; // Rethrow to let the controller return 500/409
       }
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      // Only rollback if the transaction hasn't been committed yet
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+        this.logger.error('Checkout failed - rolled back DB transaction', error);
+      }
+
       this.metricsService.incrementCheckoutRequest('failed');
-      this.logger.error('Checkout failed', error);
+
+      // Handle the specific Postgres duplicate error gracefully if it leaks out
+      if (error.code === '23505') {
+        throw new ConflictException('Duplicate payment request detected. Please refresh the page and try again.');
+      }
+
       throw error;
     } finally {
-      await queryRunner.release();
+      if (!queryRunner.isReleased) {
+        await queryRunner.release();
+      }
     }
   }
 }
