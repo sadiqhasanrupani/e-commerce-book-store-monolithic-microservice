@@ -34,6 +34,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { GeoModule } from './geo/geo.module';
 import { InvoicesModule } from './invoices/invoices.module';
+import { OrdersModule } from './orders/orders.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { InvoicesModule } from './invoices/invoices.module';
     WishlistModule,
     GeoModule,
     InvoicesModule,
+    OrdersModule,
   ],
   providers: [
     {

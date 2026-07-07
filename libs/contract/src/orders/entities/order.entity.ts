@@ -36,6 +36,18 @@ export class Order {
   @Column({ type: 'numeric', precision: 10, scale: 2, default: 0 })
   gift_card_amount: number;
 
+  /**
+   * Snapshot of the shipping address captured at checkout time, so the order
+   * remains accurate even if the user later edits or deletes the address.
+   * Nullable for backwards-compatibility with rows created before this column.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  shipping_address: Record<string, any> | null;
+
+  /** Currency the order total is denominated in. Defaults to INR. */
+  @Column({ type: 'varchar', length: 3, default: 'INR' })
+  currency: string;
+
   @OneToMany(() => OrderItem, (item) => item.order)
   items: OrderItem[];
 
