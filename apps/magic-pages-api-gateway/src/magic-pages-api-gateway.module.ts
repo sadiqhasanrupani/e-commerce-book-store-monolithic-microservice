@@ -33,6 +33,7 @@ import { MiddlewareConsumer, RequestMethod, NestModule } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { GeoModule } from './geo/geo.module';
+import { InvoicesModule } from './invoices/invoices.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { GeoModule } from './geo/geo.module';
     FormatsModule,
     WishlistModule,
     GeoModule,
+    InvoicesModule,
   ],
   providers: [
     {
