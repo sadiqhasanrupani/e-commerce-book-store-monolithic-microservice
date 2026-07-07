@@ -32,6 +32,7 @@ import { LoggerModule, RequestIdMiddleware, LoggingInterceptor } from '../../../
 import { MiddlewareConsumer, RequestMethod, NestModule } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { WishlistModule } from './wishlist/wishlist.module';
+import { GeoModule } from './geo/geo.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { WishlistModule } from './wishlist/wishlist.module';
     BookAgeGroupsModule,
     FormatsModule,
     WishlistModule,
+    GeoModule,
   ],
   providers: [
     {
