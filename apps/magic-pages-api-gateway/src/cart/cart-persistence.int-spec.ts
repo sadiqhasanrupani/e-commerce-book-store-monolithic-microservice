@@ -111,7 +111,7 @@ describe('Cart Persistence & Soft Reservation (Mocked Integration)', () => {
       price: 100,
       stockQuantity: 10,
       reservedQuantity: 0,
-      book: { title: 'Test Book' },
+      book: { id: 'book-1', title: 'Test Book' },
     } as any;
     variants.push(variant);
 
@@ -173,12 +173,13 @@ describe('Cart Persistence & Soft Reservation (Mocked Integration)', () => {
     });
 
     // 2. Add to Cart
-    await cartService.addToCart(999, { bookFormatVariantId: 1, qty: 2 });
+    const updatedCart = await cartService.addToCart(999, { bookFormatVariantId: 1, qty: 2 });
 
     // Verify item created
     expect(cartItems.length).toBe(1);
     expect(cartItems[0].qty).toBe(2);
     expect(cartItems[0].isStockReserved).toBe(true);
+    expect(updatedCart.items[0].bookId).toBe('book-1');
 
     // 3. Simulate Expiry & Worker
     // Mock worker repository calls

@@ -12,12 +12,11 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { CartService } from './providers/cart.service';
 import { CartMergeService } from './providers/cart-merge.service';
 import { CreateCartItemDto } from '@app/contract/carts/dtos/create-cart-item.dto';
 import { UpdateCartItemDto } from '@app/contract/carts/dtos/update-cart-item.dto';
-import { CartResponseDto } from '@app/contract/carts/dtos/cart-response.dto';
+import { AuthCartResponseDto } from '@app/contract/carts/dtos/auth-cart-response.dto';
 import { CheckoutDto } from '@app/contract/carts/dtos/checkout.dto';
 import { MergeCartRequestDto, MergeCartResponseDto } from '@app/contract/carts/dtos/merge-cart.dto';
 import { CheckoutService } from './providers/checkout.service';
@@ -39,8 +38,8 @@ export class CartController {
 
   @Get()
   @ApiOperation({ summary: 'Get current user cart' })
-  @ApiResponse({ status: 200, description: 'Cart retrieved successfully', type: CartResponseDto })
-  async getCart(@Request() req): Promise<CartResponseDto> {
+  @ApiResponse({ status: 200, description: 'Cart retrieved successfully', type: AuthCartResponseDto })
+  async getCart(@Request() req): Promise<AuthCartResponseDto> {
     return this.cartService.getCart(req.user.userId);
   }
 
@@ -48,7 +47,7 @@ export class CartController {
   @ApiOperation({ summary: 'Add item to cart' })
   @ApiResponse({ status: 201, description: 'Item added to cart' })
   @ApiResponse({ status: 409, description: 'Insufficient stock' })
-  async addItem(@Request() req, @Body() dto: CreateCartItemDto): Promise<CartResponseDto> {
+  async addItem(@Request() req, @Body() dto: CreateCartItemDto): Promise<AuthCartResponseDto> {
     return this.cartService.addToCart(req.user.userId, dto);
   }
 
@@ -60,7 +59,7 @@ export class CartController {
     @Request() req,
     @Param('itemId') itemId: string,
     @Body() dto: UpdateCartItemDto,
-  ): Promise<CartResponseDto> {
+  ): Promise<AuthCartResponseDto> {
     return this.cartService.updateCartItem(req.user.userId, itemId, dto);
   }
 
@@ -100,4 +99,3 @@ export class CartController {
     return this.checkoutService.checkout(req.user.userId, dto, idempotencyKey);
   }
 }
-

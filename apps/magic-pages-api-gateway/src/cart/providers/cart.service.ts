@@ -14,6 +14,7 @@ import { Book } from '@app/contract/books/entities/book.entity';
 import { CreateCartItemDto } from '@app/contract/carts/dtos/create-cart-item.dto';
 import { UpdateCartItemDto } from '@app/contract/carts/dtos/update-cart-item.dto';
 import { CartResponseDto, CartItemResponseDto } from '@app/contract/carts/dtos/cart-response.dto';
+import { AuthCartResponseDto } from '@app/contract/carts/dtos/auth-cart-response.dto';
 import { GuestCartResponseDto } from '@app/contract/carts/dtos/guest-cart-response.dto';
 import { RedisService } from '@app/redis';
 import { BookFormat, isPhysicalFormat } from '@app/contract/books/enums/book-format.enum';
@@ -42,39 +43,73 @@ export class CartService {
   ) { }
 
   /**
-   * Get cart for user - with Redis caching
+   * Get cart for user
    */
-  async getCart(userId: number): Promise<CartResponseDto> {
-    // Try cache first
-    const cacheKey = `cart:${userId}`;
-    const cached = await this.redisService.get(cacheKey);
-    if (cached) {
-      return JSON.parse(cached);
+  async getCart(userId: number): Promise<AuthCartResponseDto> {
+    // Fetch active cart
+    let cart = await this.cartRepository
+      .createQueryBuilder('cart')
+      .leftJoinAndSelect('cart.items', 'items')
+      .leftJoinAndSelect('items.bookFormatVariant', 'variant')
+      .leftJoinAndSelect('variant.book', 'book')
+      .where('cart.userId = :userId', { userId })
+      .andWhere('cart.status = :status', { status: CartStatus.ACTIVE })
+      .orderBy('items.createdAt', 'ASC')
+      .getOne();
+
+    // Create cart if not exists
+    if (!cart) {
+      cart = this.cartRepository.create({
+        userId,
+        status: CartStatus.ACTIVE,
+      });
+
+      cart = await this.cartRepository.save(cart);
+      cart.items = [];
     }
 
-    // Get or create cart
-    let cart = await this.cartRepository.findOne({
-      where: { userId, status: CartStatus.ACTIVE },
-      relations: ['items', 'items.bookFormatVariant', 'items.bookFormatVariant.book'],
+    // Filter invalid items (variant deleted, etc.)
+    const validItems = (cart.items || []).filter(
+      (item) => item.bookFormatVariant && item.bookFormatVariant.book,
+    );
+
+    // Calculate totals
+    let subtotal = 0;
+
+    const items = validItems.map((item) => {
+      const price = Number(item.unitPrice);
+      const qty = Number(item.qty);
+
+      const total = price * qty;
+      subtotal += total;
+
+      return {
+        id: item.id,
+        bookId: item.bookFormatVariant.book.id,
+        qty,
+        unitPrice: price,
+        total,
+        title: item.title,
+        coverImageUrl: item.coverImageUrl,
+        variantId: item.bookFormatVariantId,
+        format: item.bookFormatVariant?.format,
+      };
     });
 
-    if (!cart) {
-      cart = this.cartRepository.create({ userId, status: CartStatus.ACTIVE, items: [] });
-      await this.cartRepository.save(cart);
-    }
-
-    const response = await this.buildCartResponse(cart);
-
-    // Cache the result
-    await this.redisService.set(cacheKey, JSON.stringify(response), CART_CACHE_TTL);
-
-    return response;
+    return {
+      cartId: cart.id,
+      userId,
+      items,
+      subtotal,
+      totalItems: items.length,
+      totalQuantity: items.reduce((acc, item) => acc + item.qty, 0),
+    };
   }
 
   /**
    * Add item to cart with pessimistic locking for stock reservation
    */
-  async addToCart(userId: number, dto: CreateCartItemDto): Promise<CartResponseDto> {
+  async addToCart(userId: number, dto: CreateCartItemDto): Promise<AuthCartResponseDto> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -86,83 +121,87 @@ export class CartService {
       });
 
       if (!cart) {
-        cart = queryRunner.manager.create(Cart, { userId, status: CartStatus.ACTIVE });
-        await queryRunner.manager.save(cart);
+        cart = queryRunner.manager.create(Cart, {
+          userId,
+          status: CartStatus.ACTIVE,
+        });
+
+        cart = await queryRunner.manager.save(cart);
       }
 
-      // Lock the variant row with FOR UPDATE (pessimistic locking)
+      // Lock variant row
       const variant = await queryRunner.manager
         .createQueryBuilder(BookFormatVariant, 'variant')
-        // .leftJoinAndSelect('variant.book', 'book')
         .innerJoinAndSelect('variant.book', 'book')
         .setLock('pessimistic_write')
         .where('variant.id = :id', { id: dto.bookFormatVariantId })
         .getOne();
 
       if (!variant) {
-        throw new NotFoundException(`Book variant with ID ${dto.bookFormatVariantId} not found`);
+        throw new NotFoundException(
+          `Book variant with ID ${dto.bookFormatVariantId} not found`,
+        );
       }
 
-      // Check if variant is physical and needs stock reservation
       const isPhysical = isPhysicalFormat(variant.format);
+
+      // Check if item already exists
+      const existingItem = await queryRunner.manager.findOne(CartItem, {
+        where: {
+          cartId: cart.id,
+          bookFormatVariantId: dto.bookFormatVariantId,
+        },
+      });
+
+      const existingQty = existingItem?.qty ?? 0;
+      const requestedQty = existingQty + dto.qty;
 
       if (isPhysical) {
         const availableStock = variant.stockQuantity - variant.reservedQuantity;
-        if (availableStock < dto.qty) {
+
+        const additionalRequired = requestedQty - existingQty;
+
+        if (availableStock < additionalRequired) {
           throw new ConflictException({
             message: 'Insufficient stock',
             code: 'INSUFFICIENT_STOCK',
             available: availableStock,
-            requested: dto.qty,
+            requested: additionalRequired,
           });
         }
 
-        // Reserve stock
-        await queryRunner.manager.update(
-          BookFormatVariant,
-          { id: variant.id },
-          { reservedQuantity: () => `reservedQuantity + ${dto.qty}` },
-        );
+        // Reserve only additional quantity
+        await queryRunner.manager
+          .createQueryBuilder()
+          .update(BookFormatVariant)
+          .set({
+            reservedQuantity: () => `reservedQuantity + :qty`,
+          })
+          .where('id = :id', { id: variant.id })
+          .setParameters({ qty: additionalRequired })
+          .execute();
       }
 
-      // Get book details from relation
       const book = variant.book;
 
-      // Check if item already exists in cart
-      const existingItem = await queryRunner.manager.findOne(CartItem, {
-        where: { cartId: cart.id, bookFormatVariantId: dto.bookFormatVariantId },
-      });
-
       if (existingItem) {
-        // Update quantity
-        existingItem.qty += dto.qty;
+        existingItem.qty = requestedQty;
         await queryRunner.manager.save(existingItem);
       } else {
-        // Create new cart item
         const cartItem = queryRunner.manager.create(CartItem, {
           cartId: cart.id,
           bookFormatVariantId: dto.bookFormatVariantId,
           qty: dto.qty,
           unitPrice: variant.price,
-          title: book?.title || 'Unknown',
-          coverImageUrl: book?.coverImageUrl || '',
+          title: book?.title ?? 'Unknown',
+          coverImageUrl: book?.coverImageUrl ?? '',
         });
+
         await queryRunner.manager.save(cartItem);
       }
 
       await queryRunner.commitTransaction();
 
-      // Set Redis TTL for reservation tracking
-      if (isPhysical) {
-        const reservationKey = `cart_reservation:${cart.id}:${dto.bookFormatVariantId}`;
-        await this.redisService.set(
-          reservationKey,
-          JSON.stringify({ variantId: dto.bookFormatVariantId, qty: dto.qty }),
-          RESERVATION_TTL,
-        );
-      }
-
-      // Invalidate cache
       await this.invalidateCartCache(userId);
 
       return this.getCart(userId);
@@ -180,7 +219,7 @@ export class CartService {
   /**
    * Update cart item quantity
    */
-  async updateCartItem(userId: number, itemId: string, dto: UpdateCartItemDto): Promise<CartResponseDto> {
+  async updateCartItem(userId: number, itemId: string, dto: UpdateCartItemDto): Promise<AuthCartResponseDto> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -406,6 +445,7 @@ export class CartService {
   private async buildCartResponse(cart: Cart): Promise<CartResponseDto> {
     const items: CartItemResponseDto[] = cart.items.map((item) => ({
       id: item.id,
+      bookId: item.bookFormatVariant?.book?.id ?? '',
       bookFormatVariantId: item.bookFormatVariantId,
       title: item.title,
       unitPrice: Number(item.unitPrice),
@@ -610,6 +650,7 @@ export class CartService {
   private buildGuestCartResponse(cart: Cart, sessionId: string): GuestCartResponseDto {
     const items: CartItemResponseDto[] = cart.items.map((item) => ({
       id: item.id,
+      bookId: item.bookFormatVariant?.book?.id ?? '',
       bookFormatVariantId: item.bookFormatVariantId,
       title: item.title,
       unitPrice: Number(item.unitPrice),

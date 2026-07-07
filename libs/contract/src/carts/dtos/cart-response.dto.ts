@@ -5,6 +5,9 @@ export class CartItemResponseDto {
   id: string;
 
   @ApiProperty()
+  bookId: string;
+
+  @ApiProperty()
   bookFormatVariantId: number;
 
   @ApiProperty()

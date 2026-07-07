@@ -365,6 +365,7 @@ export class CartMergeService {
   private async buildCartResponse(cart: Cart): Promise<CartResponseDto> {
     const items: CartItemResponseDto[] = (cart.items || []).map((item) => ({
       id: item.id,
+      bookId: item.bookFormatVariant?.book?.id ?? '',
       bookFormatVariantId: item.bookFormatVariantId,
       title: item.title,
       unitPrice: Number(item.unitPrice),

@@ -185,9 +185,14 @@ export class CheckoutService {
       order.user = { id: userId } as any;
       order.total_amount = totalAmount;
       order.payment_status = PaymentStatus.PENDING;
-      // order.shipping_address = dto.shippingAddress; // Assuming Order has this field or we store it elsewhere
-      // For now, ignoring address storage on Order entity as it wasn't in the entity definition I saw earlier.
-      // TODO: Add shipping address to Order entity
+      // Snapshot the shipping address and currency at checkout time so the order
+      // record stays accurate even if the user later edits/deletes the address.
+      order.shipping_address = dto.shippingAddress
+        ? { ...dto.shippingAddress }
+        : null;
+      // Currency is currently INR-only (Razorpay). Centralised here so the order
+      // carries the value the payment is initiated with.
+      order.currency = 'INR';
 
       const savedOrder = await queryRunner.manager.save(Order, order);
 
