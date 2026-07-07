@@ -20,11 +20,17 @@ export class RazorpayProvider implements IPaymentProvider {
   private readonly logger = new Logger(RazorpayProvider.name);
   private readonly razorpay: Razorpay;
   private readonly webhookSecret: string;
+  private readonly keyId: string;
 
   constructor(private readonly configService: ConfigService) {
     const keyId = this.configService.get<string>('RAZORPAY_KEY_ID');
     const keySecret = this.configService.get<string>('RAZORPAY_KEY_SECRET');
+
+    this.logger.log(`[Razorpay Provider] - ${Date.now()} — Razorpay key id: `, keyId);
+    this.logger.log(`[Razorpay Provider] - ${Date.now()} — Razorpay key secret: `, keySecret);
+
     this.webhookSecret = this.configService.get<string>('RAZORPAY_WEBHOOK_SECRET') || '';
+    this.keyId = keyId || '';
 
     if (!keyId || !keySecret) {
       this.logger.warn('Razorpay configuration missing (KEY_ID or KEY_SECRET)');
@@ -59,6 +65,9 @@ export class RazorpayProvider implements IPaymentProvider {
       return {
         transactionId: order.id, // This is the razorpay_order_id
         orderId: order.id,
+        key: this.keyId, // Public key_id used to create the order; FE SDK must open with the SAME key
+        amount: request.amount, // rupees; FE multiplies by 100 for paise
+        currency: request.currency,
         provider: PaymentProvider.RAZORPAY,
         actionType: PaymentActionType.MODAL,
         expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 mins (approx)

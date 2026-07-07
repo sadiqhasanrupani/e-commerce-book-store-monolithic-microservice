@@ -43,6 +43,9 @@ export interface PaymentInitiationResponse {
   paymentUrl?: string; // For Redirect
   orderId?: string; // For Razorpay Modal
   qrCode?: string;
+  key?: string; // Razorpay public key_id used to create the order (must match the order on the frontend SDK)
+  amount?: number; // Order amount in rupees (frontend multiplies ×100 for paise)
+  currency?: string; // Currency code e.g. 'INR'
   expiresAt?: Date;
   provider: PaymentProvider;
   actionType: PaymentActionType;
