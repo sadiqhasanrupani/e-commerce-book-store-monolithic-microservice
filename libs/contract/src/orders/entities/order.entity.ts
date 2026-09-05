@@ -48,6 +48,46 @@ export class Order {
   @Column({ type: 'varchar', length: 3, default: 'INR' })
   currency: string;
 
+  /**
+   * Shipping charged on this order, in MAJOR units (rupees) like
+   * `total_amount`. Already included in `total_amount` — it is stored
+   * separately so the storefront and the invoice can show the breakdown, not so
+   * it can be added again.
+   *
+   * Zero for digital-only orders and for every order placed before shipping
+   * was charged at all.
+   */
+  @Column({ type: 'numeric', precision: 10, scale: 2, default: 0 })
+  shipping_cost: number;
+
+  /**
+   * Manual, admin-entered shipment details. There is no courier API
+   * integration: an admin types the carrier name and AWB into
+   * `PATCH /admin/orders/:id/fulfillment` when the parcel goes out, and the
+   * storefront renders them read-only.
+   *
+   * All three stay NULL for digital-only orders and for any order that has not
+   * been marked SHIPPED yet.
+   */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  carrier: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  tracking_number: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  tracking_url: string | null;
+
+  /**
+   * When the order FIRST entered SHIPPED / DELIVERED. Stamped once and never
+   * overwritten, so a repeated admin call cannot rewrite history.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  shipped_at: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  delivered_at: Date | null;
+
   @OneToMany(() => OrderItem, (item) => item.order)
   items: OrderItem[];
 

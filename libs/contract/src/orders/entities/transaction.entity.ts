@@ -17,7 +17,7 @@ export enum TransactionStatus {
   FAILED = 'FAILED',
 }
 
-import { PaymentProvider } from '@app/contract/carts/enums/payment-provider.enum';
+import { TRANSACTION_PROVIDERS, TransactionProvider } from '@app/contract/carts/enums/payment-provider.enum';
 
 @Entity('transactions')
 export class Transaction {
@@ -43,11 +43,20 @@ export class Transaction {
   })
   status: TransactionStatus;
 
+  /**
+   * Gateway that handled the payment.
+   *
+   * Typed against `TRANSACTION_PROVIDERS` (which still contains `phonepe`)
+   * rather than `PaymentProvider` (Razorpay-only) so that historical PhonePe
+   * rows keep loading. New rows can only ever be `razorpay` — that is enforced
+   * at the DTO/provider-selection layer, not here.
+   */
   @Column({
     type: 'enum',
-    enum: PaymentProvider,
+    enum: TRANSACTION_PROVIDERS,
+    enumName: 'transactions_provider_enum',
   })
-  provider: PaymentProvider;
+  provider: TransactionProvider;
 
   @Column({ type: 'jsonb', nullable: true })
   raw_request: any;

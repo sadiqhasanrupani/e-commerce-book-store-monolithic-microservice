@@ -77,6 +77,7 @@ export class CartExceptionFilter implements ExceptionFilter {
       [CartErrorCode.IDEMPOTENCY_CONFLICT]: 'This request has already been processed.',
       [CartErrorCode.INVALID_CART_STATUS]: 'Your cart is in an invalid state for this operation.',
       [CartErrorCode.UNAUTHORIZED_ACCESS]: 'You do not have permission to access this cart.',
+      [CartErrorCode.SHIPPING_ADDRESS_REQUIRED]: 'A shipping address is required for orders containing physical items.',
     };
 
     return messages[code] || originalMessage;
@@ -94,6 +95,7 @@ export class CartExceptionFilter implements ExceptionFilter {
       [CartErrorCode.IDEMPOTENCY_CONFLICT]: 'Check your order history to see if the order was already created.',
       [CartErrorCode.INVALID_CART_STATUS]: 'Please start a new cart.',
       [CartErrorCode.UNAUTHORIZED_ACCESS]: 'Please log in and try again.',
+      [CartErrorCode.SHIPPING_ADDRESS_REQUIRED]: 'Add a shipping address at checkout and try again.',
     };
 
     return actions[code] || 'Please try again or contact support.';

@@ -20,6 +20,7 @@ import { RedisService } from '@app/redis';
 import { BookFormat, isPhysicalFormat } from '@app/contract/books/enums/book-format.enum';
 import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { CartMetricsService } from '../metrics/cart-metrics.service';
+import { ShippingRateService } from './shipping-rate.service';
 
 const CART_CACHE_TTL = 3600; // 1 hour
 const RESERVATION_TTL = 900; // 15 minutes (authenticated users)
@@ -40,6 +41,7 @@ export class CartService {
     private readonly dataSource: DataSource,
     private readonly redisService: RedisService,
     private readonly metricsService: CartMetricsService,
+    private readonly shippingRateService: ShippingRateService,
   ) { }
 
   /**
@@ -96,11 +98,24 @@ export class CartService {
       };
     });
 
+    // Flat-rate shipping, computed the SAME way CheckoutService computes it at
+    // charge time — both call `ShippingRateService`, so this pre-payment quote
+    // and the amount Razorpay actually collects cannot drift apart. Before
+    // this, `getCart` had no notion of shipping at all: the storefront summary
+    // always showed 0/"Free" for a physical basket, while checkout (correctly)
+    // charged the flat rate — a customer-visible quote/charge mismatch the
+    // moment `SHIPPING_FLAT_RATE_PAISE` is set above zero.
+    const shipping = this.shippingRateService.resolveShippingCost(
+      this.shippingRateService.cartHasPhysicalItems(validItems),
+    );
+
     return {
       cartId: cart.id,
       userId,
       items,
       subtotal,
+      shipping,
+      total: subtotal + shipping,
       totalItems: items.length,
       totalQuantity: items.reduce((acc, item) => acc + item.qty, 0),
     };
@@ -456,13 +471,20 @@ export class CartService {
 
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
 
+    // Flat-rate shipping, charged only when the basket contains something
+    // shippable. This used to be a hardcoded `0` here and in two other files,
+    // so the cart summary could never match what checkout charged.
+    const shipping = this.shippingRateService.resolveShippingCost(
+      this.shippingRateService.cartHasPhysicalItems(cart.items),
+    );
+
     return {
       id: cart.id,
       items,
       subtotal,
-      shipping: 0,
+      shipping,
       discount: 0,
-      total: subtotal,
+      total: subtotal + shipping,
     };
   }
 

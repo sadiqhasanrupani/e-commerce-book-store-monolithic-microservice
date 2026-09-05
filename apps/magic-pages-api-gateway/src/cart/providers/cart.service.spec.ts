@@ -10,6 +10,8 @@ import { DataSource, Repository } from 'typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { BookFormat } from '@app/contract/books/enums/book-format.enum';
+import { CartMetricsService } from '../metrics/cart-metrics.service';
+import { ShippingRateService } from './shipping-rate.service';
 
 describe('CartService', () => {
   let service: CartService;
@@ -19,6 +21,8 @@ describe('CartService', () => {
   let bookRepository: jest.Mocked<Repository<Book>>;
   let redisService: jest.Mocked<RedisService>;
   let dataSource: jest.Mocked<DataSource>;
+  let queryRunnerMock: any;
+  let shippingRateService: { resolveShippingCost: jest.Mock; cartHasPhysicalItems: jest.Mock };
 
   const mockCart = {
     id: '123',
@@ -53,11 +57,54 @@ describe('CartService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
-      createQueryBuilder: jest.fn(() => ({
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        getOne: jest.fn(),
-      })),
+      // Fully chainable: the service chains leftJoinAndSelect/where/andWhere/
+      // orderBy before awaiting getOne. Stubbing only a subset makes the chain
+      // return undefined mid-way and throws a misleading TypeError.
+      createQueryBuilder: jest.fn(() => {
+        const qb: any = {};
+        for (const method of [
+          'leftJoin',
+          'leftJoinAndSelect',
+          'innerJoin',
+          'innerJoinAndSelect',
+          'select',
+          'addSelect',
+          'where',
+          'andWhere',
+          'orWhere',
+          'orderBy',
+          'addOrderBy',
+          'skip',
+          'take',
+          'limit',
+          'offset',
+          'setLock',
+        ]) {
+          qb[method] = jest.fn(() => qb);
+        }
+        qb.getOne = jest.fn();
+        qb.getMany = jest.fn(() => Promise.resolve([]));
+        qb.getManyAndCount = jest.fn(() => Promise.resolve([[], 0]));
+        qb.getCount = jest.fn(() => Promise.resolve(0));
+        return qb;
+      }),
+    };
+
+    queryRunnerMock = {
+      connect: jest.fn(),
+      startTransaction: jest.fn(),
+      commitTransaction: jest.fn(),
+      rollbackTransaction: jest.fn(),
+      release: jest.fn(),
+      isTransactionActive: true,
+      isReleased: false,
+      manager: {
+        create: jest.fn((_entity: any, plain: any) => ({ ...plain })),
+        findOne: jest.fn(),
+        save: jest.fn((_entity: any, value: any) => Promise.resolve(value)),
+        update: jest.fn(),
+        remove: jest.fn(),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -88,20 +135,43 @@ describe('CartService', () => {
           },
         },
         {
+          // CartService takes CartMetricsService as a constructor dependency;
+          // without it the testing module fails to resolve and every test in
+          // this file errors before it runs. Metrics are fire-and-forget, so a
+          // no-op double is enough — nothing here asserts on them.
+          provide: CartMetricsService,
+          useValue: {
+            incrementCartOperation: jest.fn(),
+            updateCartItemsCount: jest.fn(),
+            incrementCheckoutRequest: jest.fn(),
+            observeCheckoutDuration: jest.fn(),
+            incrementPaymentWebhook: jest.fn(),
+            incrementStockReservation: jest.fn(),
+            incrementCacheOperation: jest.fn(),
+          },
+        },
+        {
+          // Same story as CartMetricsService above: CartService now resolves the
+          // cart summary's shipping line through ShippingRateService, so the
+          // testing module cannot construct it without a double. Returns 0,
+          // which is the shipped default (`SHIPPING_FLAT_RATE_PAISE` unset) and
+          // keeps every pre-existing total assertion in this file valid.
+          provide: ShippingRateService,
+          useValue: {
+            resolveShippingCost: jest.fn(() => 0),
+            cartHasPhysicalItems: jest.fn(() => false),
+          },
+        },
+        {
           provide: DataSource,
           useValue: {
             transaction: jest.fn(),
-            createQueryRunner: jest.fn(() => ({
-              connect: jest.fn(),
-              startTransaction: jest.fn(),
-              commitTransaction: jest.fn(),
-              rollbackTransaction: jest.fn(),
-              release: jest.fn(),
-              manager: {
-                save: jest.fn(),
-                findOne: jest.fn(),
-              },
-            })),
+            // CartService does its writes through queryRunner.manager. The double
+            // must cover every method the service actually calls (create,
+            // findOne, save, update, remove) — a missing one surfaces as a
+            // confusing "x is not a function" TypeError inside the service's
+            // own try/catch, which then reports as the wrong exception type.
+            createQueryRunner: jest.fn(() => queryRunnerMock),
           },
         },
       ],
@@ -114,6 +184,7 @@ describe('CartService', () => {
     bookRepository = module.get(getRepositoryToken(Book));
     redisService = module.get(RedisService);
     dataSource = module.get(DataSource);
+    shippingRateService = module.get(ShippingRateService);
   });
 
   afterEach(() => {
@@ -158,6 +229,88 @@ describe('CartService', () => {
         }),
       );
       expect(cartRepository.save).toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The bug this guards: `GET /cart` used to have no notion of shipping at
+   * all, so the storefront summary always showed 0/"Free" for a physical
+   * basket while `CheckoutService` (correctly) charged the flat rate — a
+   * customer sees one number pre-payment and their card is debited another.
+   * The fix routes `getCart` through the SAME `ShippingRateService` calls
+   * `CheckoutService` makes, so the pre-payment quote and the actual charge
+   * cannot drift apart. See `checkout.service.spec.ts` ("flat-rate shipping")
+   * for the charge-side half of this contract.
+   */
+  describe('getCart — shipping quote', () => {
+    /**
+     * `getCart` reads through `cartRepository.createQueryBuilder(...).getOne()`,
+     * not `.findOne()` — a fresh queryBuilder double per test, matching the
+     * exact chain (`leftJoinAndSelect` x3, `where`, `andWhere`, `orderBy`) the
+     * service calls before awaiting `getOne()`.
+     */
+    const mockCartQuery = (resolvedCart: any) => {
+      const qb: any = {};
+      qb.leftJoinAndSelect = jest.fn(() => qb);
+      qb.where = jest.fn(() => qb);
+      qb.andWhere = jest.fn(() => qb);
+      qb.orderBy = jest.fn(() => qb);
+      qb.getOne = jest.fn().mockResolvedValue(resolvedCart);
+      cartRepository.createQueryBuilder.mockReturnValueOnce(qb);
+    };
+
+    it('includes the shipping charge for a cart holding a physical item, from the shared rate service', async () => {
+      mockCartQuery({
+        ...mockCart,
+        items: [
+          {
+            id: 'item-1',
+            unitPrice: 250,
+            qty: 2,
+            title: 'A Paperback',
+            coverImageUrl: 'cover.jpg',
+            bookFormatVariantId: 10,
+            bookFormatVariant: { format: BookFormat.PAPERBACK, book: { id: 'book-1' } },
+          },
+        ],
+      });
+      shippingRateService.cartHasPhysicalItems.mockReturnValue(true);
+      shippingRateService.resolveShippingCost.mockReturnValue(49);
+
+      const result = await service.getCart(1);
+
+      // Same predicate CheckoutService re-derives from its locked variant rows.
+      expect(shippingRateService.cartHasPhysicalItems).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ bookFormatVariantId: 10 })]),
+      );
+      expect(shippingRateService.resolveShippingCost).toHaveBeenCalledWith(true);
+      expect(result.subtotal).toBe(500);
+      expect(result.shipping).toBe(49);
+      expect(result.total).toBe(549);
+    });
+
+    it('quotes zero shipping for a digital-only cart', async () => {
+      mockCartQuery({
+        ...mockCart,
+        items: [
+          {
+            id: 'item-2',
+            unitPrice: 10,
+            qty: 1,
+            title: 'An Ebook',
+            coverImageUrl: 'cover.jpg',
+            bookFormatVariantId: 20,
+            bookFormatVariant: { format: BookFormat.EBOOK, book: { id: 'book-2' } },
+          },
+        ],
+      });
+      shippingRateService.cartHasPhysicalItems.mockReturnValue(false);
+      shippingRateService.resolveShippingCost.mockReturnValue(0);
+
+      const result = await service.getCart(1);
+
+      expect(result.shipping).toBe(0);
+      expect(result.total).toBe(result.subtotal);
     });
   });
 

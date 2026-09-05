@@ -19,9 +19,9 @@ import { ReservationWorkerService } from './providers/reservation-worker.service
 import { CheckoutService } from './providers/checkout.service';
 import { CartMetricsService } from './metrics/cart-metrics.service';
 import { PaymentReconciliationService } from './services/payment-reconciliation.service';
+import { PaymentSettlementService } from './services/payment-settlement.service';
 import { OrderTimeoutService } from './services/order-timeout.service';
 
-import { PhonePeProvider } from './providers/phonepe.provider';
 import { RazorpayProvider } from './providers/razorpay.provider';
 
 import { Cart } from '@app/contract/carts/entities/cart.entity';
@@ -36,11 +36,21 @@ import { Refund } from '@app/contract/orders/entities/refund.entity';
 
 import { TracingInterceptor } from './interceptors/tracing.interceptor';
 import { SessionIdGuard } from './guards/session-id.guard';
+import { DigitalDeliveryModule } from '../digital-delivery/digital-delivery.module';
+import { PhysicalFulfillmentModule } from '../physical-fulfillment/physical-fulfillment.module';
+import { ShippingRateService } from './providers/shipping-rate.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Cart, CartItem, BookFormatVariant, Book, Order, OrderItem, OrderStatusLog, Transaction, Refund]),
     RedisModule,
+    // Required by PaymentSettlementService: on a successful settlement it hands
+    // the order's digital lines to DigitalDeliveryService for e-mail delivery.
+    DigitalDeliveryModule,
+    // The physical counterpart, for the same reason: on a successful settlement
+    // PaymentSettlementService moves an order containing shippable lines into
+    // the fulfilment queue and sends the buyer a confirmation.
+    PhysicalFulfillmentModule,
     ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
       imports: [RedisModule],
@@ -72,10 +82,14 @@ import { SessionIdGuard } from './guards/session-id.guard';
     CartService,
     CartMergeService,
     CheckoutService,
+    // Single source of truth for the flat shipping rate, shared by the two cart
+    // summary builders and by checkout, so the price quoted in the cart is the
+    // price the order is actually created with.
+    ShippingRateService,
     ReservationWorkerService,
     TracingInterceptor,
-    PhonePeProvider,
     RazorpayProvider,
+    PaymentSettlementService,
     PaymentReconciliationService,
     OrderTimeoutService,
     // Strategy pattern for cleanup
@@ -132,6 +146,6 @@ import { SessionIdGuard } from './guards/session-id.guard';
       labelNames: ['operation'],
     }),
   ],
-  exports: [CartService, CheckoutService, CartMetricsService],
+  exports: [CartService, CheckoutService, CartMetricsService, ShippingRateService],
 })
 export class CartModule { }

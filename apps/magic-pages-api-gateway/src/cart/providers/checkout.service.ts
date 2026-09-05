@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Cart } from '@app/contract/carts/entities/cart.entity';
@@ -9,12 +9,13 @@ import { OrderItem } from '@app/contract/orders/entities/order-item.entity';
 import { BookFormatVariant } from '@app/contract/books/entities/book-format-varient.entity';
 import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { CheckoutDto } from '@app/contract/carts/dtos/checkout.dto';
+import { toShippingAddressSnapshot } from '@app/contract/carts/utils/shipping-address-snapshot.util';
 import { IPaymentProvider, PaymentInitiationResponse, PaymentProvider } from '../interfaces/payment-provider.interface';
 import { isPhysicalFormat } from '@app/contract/books/enums/book-format.enum';
 import { CartErrorCode } from '@app/contract/carts/enums/cart-error-code.enum';
 import { CartMetricsService } from '../metrics/cart-metrics.service';
-import { PhonePeProvider } from './phonepe.provider';
 import { RazorpayProvider } from './razorpay.provider';
+import { ShippingRateService } from './shipping-rate.service';
 import { Transaction, TransactionStatus } from '@app/contract/orders/entities/transaction.entity';
 
 @Injectable()
@@ -33,13 +34,12 @@ export class CheckoutService {
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
     private readonly dataSource: DataSource,
-    private readonly phonePeProvider: PhonePeProvider,
     private readonly razorpayProvider: RazorpayProvider,
     private readonly metricsService: CartMetricsService,
-  ) { }
+    private readonly shippingRateService: ShippingRateService,
+  ) {}
 
   async checkout(userId: number, dto: CheckoutDto, idempotencyKey?: string): Promise<PaymentInitiationResponse> {
-    console.error(`DEBUG: checkout called for user ${userId}`);
     const startTime = Date.now();
     this.metricsService.incrementCheckoutRequest('pending');
     this.logger.log(`Initiating checkout for user ${userId}`);
@@ -77,8 +77,6 @@ export class CheckoutService {
         relations: ['items', 'items.bookFormatVariant'],
       });
 
-      console.error(`DEBUG: Fetched cart for user ${userId}. Items: ${cart?.items?.length}`);
-
       if (!cart || cart.items.length === 0) {
         // Cart not found as ACTIVE — check if it's stuck in CHECKOUT (from a failed previous attempt)
         const checkoutStuckCart = await queryRunner.manager.findOne(Cart, {
@@ -109,6 +107,13 @@ export class CheckoutService {
       // 2. Validate Stock and Calculate Total
       let totalAmount = 0;
       const orderItems: OrderItem[] = [];
+      /**
+       * Whether this basket needs shipping, decided from the variant rows we
+       * have just locked rather than from the (possibly stale, possibly
+       * unhydrated) cart relation — the amount we are about to charge must be
+       * derived from the same rows the stock decision was made on.
+       */
+      let hasPhysicalItems = false;
 
       for (const cartItem of cart.items) {
         const variant = cartItem.bookFormatVariant;
@@ -133,6 +138,8 @@ export class CheckoutService {
         }
 
         if (isPhysicalFormat(lockedVariant.format)) {
+          hasPhysicalItems = true;
+
           // JIT Validation & Re-reservation
           if (!cartItem.isStockReserved) {
             // Item is in cart but reservation expired. Check if we can re-reserve.
@@ -153,8 +160,15 @@ export class CheckoutService {
 
             // Re-reserve stock (JIT)
             // We increment reservedQuantity now, so that the final decrement step works correctly
-            this.logger.log(`Before Increment: Stock=${lockedVariant.stockQuantity}, Reserved=${lockedVariant.reservedQuantity}`);
-            await queryRunner.manager.increment(BookFormatVariant, { id: variant.id }, 'reservedQuantity', cartItem.qty);
+            this.logger.log(
+              `Before Increment: Stock=${lockedVariant.stockQuantity}, Reserved=${lockedVariant.reservedQuantity}`,
+            );
+            await queryRunner.manager.increment(
+              BookFormatVariant,
+              { id: variant.id },
+              'reservedQuantity',
+              cartItem.qty,
+            );
             this.logger.log(`JIT Re-reservation successful for item ${cartItem.id} (Qty: ${cartItem.qty})`);
           } else {
             // Already reserved. Sanity check.
@@ -180,16 +194,41 @@ export class CheckoutService {
         orderItems.push(orderItem);
       }
 
+      // 2a. A physical line needs somewhere to be sent. `CheckoutDto.shippingAddress`
+      // is optional at the DTO layer — a digital-only order needs none — so
+      // this is the one place that can actually tell whether an address is
+      // required, because `hasPhysicalItems` above was just derived from the
+      // same locked variant rows the stock and shipping-cost decisions use.
+      // Without this, a paperback could reach PAID with `shipping_address`
+      // permanently NULL: nothing downstream (the order entity, the admin
+      // fulfilment endpoint) revalidates it, so the parcel would have no
+      // address to ship to.
+      if (hasPhysicalItems && !dto.shippingAddress) {
+        throw new BadRequestException({
+          code: CartErrorCode.SHIPPING_ADDRESS_REQUIRED,
+          message: 'A shipping address is required to check out a cart containing a physical item.',
+        });
+      }
+
+      // 2b. Flat-rate shipping. Charged once per order that contains anything
+      // shippable, nothing for a digital-only basket. `shippingCost` is stored
+      // on the order for the breakdown and is ALSO folded into `orderTotal` —
+      // which is what the order, the transaction row and the Razorpay charge
+      // are all built from below, so the three can never disagree.
+      const shippingCost = this.shippingRateService.resolveShippingCost(hasPhysicalItems);
+      const orderTotal = totalAmount + shippingCost;
+
       // 3. Create Order
       const order = new Order();
       order.user = { id: userId } as any;
-      order.total_amount = totalAmount;
+      order.total_amount = orderTotal;
+      order.shipping_cost = shippingCost;
       order.payment_status = PaymentStatus.PENDING;
       // Snapshot the shipping address and currency at checkout time so the order
       // record stays accurate even if the user later edits/deletes the address.
-      order.shipping_address = dto.shippingAddress
-        ? { ...dto.shippingAddress }
-        : null;
+      // Normalised first so the snapshot always uses the canonical field names
+      // (`postalCode`, `country`) regardless of which alias the client sent.
+      order.shipping_address = dto.shippingAddress ? toShippingAddressSnapshot(dto.shippingAddress) : null;
       // Currency is currently INR-only (Razorpay). Centralised here so the order
       // carries the value the payment is initiated with.
       order.currency = 'INR';
@@ -215,28 +254,25 @@ export class CheckoutService {
 
       // 7. Initiate Payment (Outside DB transaction to avoid long locks)
       try {
-        // Determine Provider
+        // Razorpay is the only gateway we accept (roadmap #6). `CheckoutDto`
+        // validates `paymentMethod` against the same enum, so anything else is
+        // already a 400 before we get here — this check only guards against a
+        // caller bypassing the DTO.
         const providerName = dto.paymentMethod;
-        let provider: IPaymentProvider;
-
-        // For now, hardcoded rule:
-        const currency = 'INR';
-
-        const providers: Record<string, IPaymentProvider> = {
-          [PaymentProvider.PHONEPE]: this.phonePeProvider,
-          [PaymentProvider.RAZORPAY]: this.razorpayProvider,
-        };
-
-        provider = providers[providerName];
-
-        if (!provider) {
-          throw new ConflictException("Invalid payment provider");
+        if (providerName !== PaymentProvider.RAZORPAY) {
+          throw new ConflictException('Invalid payment provider');
         }
+
+        const provider: IPaymentProvider = this.razorpayProvider;
+        const currency = 'INR';
 
         // Create Transaction Record
         const transaction = new Transaction();
         transaction.order = savedOrder;
-        transaction.amount = totalAmount;
+        // Shipping-inclusive, matching `order.total_amount`. Charging the
+        // line-item subtotal here would leave the gateway collecting less than
+        // the order says it is worth.
+        transaction.amount = orderTotal;
         transaction.currency = currency;
         transaction.status = TransactionStatus.PENDING;
         transaction.provider = providerName;
@@ -250,10 +286,13 @@ export class CheckoutService {
         try {
           savedTransaction = await this.transactionRepository.save(transaction);
         } catch (error) {
-          if (error.code === '23505') { // Unique constraint violation (Postgres)
+          if (error.code === '23505') {
+            // Unique constraint violation (Postgres)
             this.logger.log(`Idempotency hit during save for key ${idempotencyKey}`);
             // Find the existing transaction and reuse it
-            const existingTxn = await this.transactionRepository.findOne({ where: { idempotency_key: idempotencyKey } });
+            const existingTxn = await this.transactionRepository.findOne({
+              where: { idempotency_key: idempotencyKey },
+            });
 
             if (existingTxn) {
               this.logger.log(`Reusing transaction ${existingTxn.id} for idempotency key ${idempotencyKey}`);
@@ -273,7 +312,7 @@ export class CheckoutService {
 
         const paymentResponse = await provider.initiatePayment({
           orderId: savedTransaction.id, // Use Transaction UUID for uniqueness and retry support
-          amount: totalAmount,
+          amount: orderTotal,
           currency: currency,
           customerPhone: dto.shippingAddress?.phone || '',
           callbackUrl: `${process.env.APP_URL}/cart/webhook/payment`, // Backend Webhook
