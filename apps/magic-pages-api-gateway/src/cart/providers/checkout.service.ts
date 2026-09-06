@@ -16,6 +16,7 @@ import { CartErrorCode } from '@app/contract/carts/enums/cart-error-code.enum';
 import { CartMetricsService } from '../metrics/cart-metrics.service';
 import { RazorpayProvider } from './razorpay.provider';
 import { ShippingRateService } from './shipping-rate.service';
+import { TaxService } from './tax.service';
 import { Transaction, TransactionStatus } from '@app/contract/orders/entities/transaction.entity';
 
 @Injectable()
@@ -37,6 +38,7 @@ export class CheckoutService {
     private readonly razorpayProvider: RazorpayProvider,
     private readonly metricsService: CartMetricsService,
     private readonly shippingRateService: ShippingRateService,
+    private readonly taxService: TaxService,
   ) {}
 
   async checkout(userId: number, dto: CheckoutDto, idempotencyKey?: string): Promise<PaymentInitiationResponse> {
@@ -106,6 +108,9 @@ export class CheckoutService {
 
       // 2. Validate Stock and Calculate Total
       let totalAmount = 0;
+      // Inclusive tax accumulated from the locked variant rows; a slice of
+      // `totalAmount`, not an addition to it.
+      let taxAmount = 0;
       const orderItems: OrderItem[] = [];
       /**
        * Whether this basket needs shipping, decided from the variant rows we
@@ -191,6 +196,23 @@ export class CheckoutService {
         orderItem.bookFormatVariant = variant;
         orderItem.quantity = cartItem.qty;
         orderItem.unit_price = Number(cartItem.unitPrice);
+
+        // Tax is INCLUSIVE: this records how much of the price the customer is
+        // already paying is tax. It is NOT added to `totalAmount` above — doing
+        // so would double-charge. The rate is read from the LOCKED variant row
+        // (not the cart snapshot) so it is the rate in force at the moment of
+        // sale, and it is snapshotted onto the line so a later admin edit
+        // cannot rewrite what this invoice says.
+        const lineTaxPercentage = lockedVariant.includeTax ? (lockedVariant.taxPercentage ?? null) : null;
+        orderItem.tax_percentage = lineTaxPercentage;
+        orderItem.tax_amount = this.taxService.lineTax({
+          unitPrice: Number(cartItem.unitPrice),
+          quantity: cartItem.qty,
+          includeTax: lockedVariant.includeTax,
+          taxPercentage: lockedVariant.taxPercentage,
+        });
+        taxAmount += orderItem.tax_amount;
+
         orderItems.push(orderItem);
       }
 
@@ -223,6 +245,9 @@ export class CheckoutService {
       order.user = { id: userId } as any;
       order.total_amount = orderTotal;
       order.shipping_cost = shippingCost;
+      // A component of `total_amount`, never added to it. Summed from the
+      // already-rounded per-line figures so the itemised lines add up to this.
+      order.tax_amount = Math.round((taxAmount + Number.EPSILON) * 100) / 100;
       order.payment_status = PaymentStatus.PENDING;
       // Snapshot the shipping address and currency at checkout time so the order
       // record stays accurate even if the user later edits/deletes the address.

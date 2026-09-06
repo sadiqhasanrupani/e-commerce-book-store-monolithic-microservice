@@ -657,6 +657,8 @@ export class OrdersService {
       // Minor units, matching `total` and `items[].price` above. Already
       // included in `total` — the frontend shows it as a breakdown line.
       shippingCost: Math.round(Number(order.shipping_cost ?? 0) * 100),
+      // Inclusive: a component of `total` above, never added to it.
+      taxAmount: Math.round(Number(order.tax_amount ?? 0) * 100),
       carrier: order.carrier ?? null,
       trackingNumber: order.tracking_number ?? null,
       trackingUrl: order.tracking_url ?? null,

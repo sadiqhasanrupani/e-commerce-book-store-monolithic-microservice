@@ -57,6 +57,17 @@ export class AuthCartResponseDto {
   @ApiProperty({ description: 'subtotal + shipping, major units.' })
   total: number;
 
+  /**
+   * Tax already contained in `subtotal`, in the same MAJOR units.
+   *
+   * INCLUSIVE: a component of the numbers above, never an addition. Adding it
+   * to `total` would double-charge the customer. Computed by `TaxService`, the
+   * same class `CheckoutService` uses to stamp `orders.tax_amount`, so the
+   * basket breakdown and the order record cannot disagree.
+   */
+  @ApiProperty({ description: 'Tax contained in subtotal (inclusive), major units.', example: 76.27 })
+  tax: number;
+
   @ApiProperty()
   totalItems: number;
 

@@ -12,6 +12,7 @@ import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { BookFormat } from '@app/contract/books/enums/book-format.enum';
 import { CartMetricsService } from '../metrics/cart-metrics.service';
 import { ShippingRateService } from './shipping-rate.service';
+import { TaxService } from './tax.service';
 
 describe('CartService', () => {
   let service: CartService;
@@ -185,6 +186,9 @@ describe('CartService', () => {
             cartHasPhysicalItems: jest.fn(() => false),
           },
         },
+        // Real, not a double: TaxService is a dependency-free calculator, so
+        // stubbing it would only let this spec drift from the real formula.
+        TaxService,
         {
           provide: DataSource,
           useValue: {

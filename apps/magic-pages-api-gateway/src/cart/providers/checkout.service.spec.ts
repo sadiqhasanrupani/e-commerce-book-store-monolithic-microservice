@@ -15,6 +15,7 @@ import { CheckoutDto } from '@app/contract/carts/dtos/checkout.dto';
 import { CartErrorCode } from '@app/contract/carts/enums/cart-error-code.enum';
 import { RazorpayProvider } from './razorpay.provider';
 import { ShippingRateService } from './shipping-rate.service';
+import { TaxService } from './tax.service';
 import { CartMetricsService } from '../metrics/cart-metrics.service';
 
 describe('CheckoutService', () => {
@@ -86,6 +87,9 @@ describe('CheckoutService', () => {
         // is "does the flat rate reach the money", so stubbing the service away
         // would assert nothing.
         ShippingRateService,
+        // Real, not a double: TaxService is a dependency-free calculator, so
+        // stubbing it would only let this spec drift from the real formula.
+        TaxService,
         { provide: ConfigService, useValue: { get: () => flatRatePaise } },
       ],
     }).compile();
@@ -286,6 +290,128 @@ describe('CheckoutService', () => {
    * paperback could reach PAID with `shipping_address` permanently NULL, with
    * nothing downstream to catch it before an admin tries to ship it nowhere.
    */
+  /**
+   * Tax is INCLUSIVE: `orders.tax_amount` records how much of the total is
+   * tax, and must never change the total itself. That property is the entire
+   * reason this feature could ship without touching the Razorpay amount, so it
+   * is asserted directly rather than inferred.
+   */
+  describe('inclusive tax', () => {
+    const dto: CheckoutDto = {
+      firstName: 'Ayaan',
+      lastName: 'Khan',
+      email: 'ayaan@example.com',
+      saveInfo: false,
+      paymentMethod: PaymentProvider.RAZORPAY,
+      shippingAddress: {
+        line1: '123 St',
+        city: 'City',
+        state: 'State',
+        pincode: '123456',
+        phone: '1234567890',
+      },
+    };
+
+    /** One physical line, ₹250 × 2, with the given tax settings on the variant. */
+    const arrangeTaxedCart = (includeTax: boolean, taxPercentage: number | null) => {
+      const variant = {
+        id: 1,
+        format: BookFormat.PHYSICAL,
+        stockQuantity: 10,
+        reservedQuantity: 2,
+        includeTax,
+        taxPercentage,
+      };
+      const cart = {
+        id: 1,
+        userId: 1,
+        status: CartStatus.ACTIVE,
+        items: [{ id: 1, qty: 2, unitPrice: 250, isStockReserved: true, bookFormatVariant: variant }],
+      };
+
+      mockQueryRunner.manager.findOne.mockImplementation((entity) => {
+        if (entity === Cart) return Promise.resolve(cart);
+        if (entity === BookFormatVariant) return Promise.resolve(variant);
+        return Promise.resolve(null);
+      });
+
+      const savedOrders: any[] = [];
+      const savedItems: any[] = [];
+      mockQueryRunner.manager.save.mockImplementation((entity, data) => {
+        if (entity === Order) {
+          savedOrders.push(data);
+          return Promise.resolve({ ...data, id: 101 });
+        }
+        if (entity === OrderItem) savedItems.push(data);
+        return Promise.resolve(data);
+      });
+
+      mockRazorpayProvider.initiatePayment.mockResolvedValue({
+        transactionId: 'order_TXN123',
+        orderId: 'order_TXN123',
+        provider: PaymentProvider.RAZORPAY,
+      });
+
+      return { savedOrders, savedItems };
+    };
+
+    it('records the tax contained in the price without changing the total', async () => {
+      const { savedOrders } = arrangeTaxedCart(true, 18);
+
+      await service.checkout(1, dto);
+
+      const order = savedOrders[0];
+      // 500 × 18 / 118 = 76.27, already inside the 500.
+      expect(order.tax_amount).toBe(76.27);
+      // The total is still Σ(price × qty) + shipping — tax added nothing.
+      expect(order.total_amount).toBe(500 + order.shipping_cost);
+    });
+
+    it('snapshots the rate and amount onto the order line', async () => {
+      const { savedItems } = arrangeTaxedCart(true, 18);
+
+      await service.checkout(1, dto);
+
+      expect(savedItems[0].tax_percentage).toBe(18);
+      expect(savedItems[0].tax_amount).toBe(76.27);
+    });
+
+    it('records no tax when the variant is not marked tax-inclusive', async () => {
+      const { savedOrders, savedItems } = arrangeTaxedCart(false, 18);
+
+      await service.checkout(1, dto);
+
+      expect(savedOrders[0].tax_amount).toBe(0);
+      expect(savedItems[0].tax_percentage).toBeNull();
+      expect(savedOrders[0].total_amount).toBe(500 + savedOrders[0].shipping_cost);
+    });
+
+    it('records no tax when the variant has no rate set', async () => {
+      const { savedOrders } = arrangeTaxedCart(true, null);
+
+      await service.checkout(1, dto);
+
+      expect(savedOrders[0].tax_amount).toBe(0);
+    });
+
+    /**
+     * The rate comes from the LOCKED variant row, not the cart snapshot, so it
+     * is the rate in force at the moment of sale.
+     */
+    it('charges the same total whether or not the line is taxed', async () => {
+      const taxed = arrangeTaxedCart(true, 18);
+      await service.checkout(1, dto);
+      const taxedTotal = taxed.savedOrders[0].total_amount;
+
+      jest.clearAllMocks();
+
+      const untaxed = arrangeTaxedCart(false, null);
+      await service.checkout(1, dto);
+
+      expect(untaxed.savedOrders[0].total_amount).toBe(taxedTotal);
+    });
+  });
+
   describe('shipping address requirement', () => {
     const dtoWithoutAddress: CheckoutDto = {
       firstName: 'Ayaan',

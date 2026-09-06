@@ -145,6 +145,15 @@ export class OrderResponseDto {
   shippingCost: number;
 
   /**
+   * Tax already contained in `total`, in paise.
+   *
+   * INCLUSIVE — a component of `total`, not an addition to it. Zero for an
+   * untaxed basket and for every order placed before tax was recorded at all.
+   */
+  @ApiProperty({ description: 'Tax contained in `total` (inclusive), in paise.', example: 7627 })
+  taxAmount: number;
+
+  /**
    * Manual shipment details entered by an admin. All null until the order is
    * marked SHIPPED, and always null for digital-only orders.
    */

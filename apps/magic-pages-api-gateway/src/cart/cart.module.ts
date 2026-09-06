@@ -39,6 +39,7 @@ import { SessionIdGuard } from './guards/session-id.guard';
 import { DigitalDeliveryModule } from '../digital-delivery/digital-delivery.module';
 import { PhysicalFulfillmentModule } from '../physical-fulfillment/physical-fulfillment.module';
 import { ShippingRateService } from './providers/shipping-rate.service';
+import { TaxService } from './providers/tax.service';
 
 @Module({
   imports: [
@@ -86,6 +87,9 @@ import { ShippingRateService } from './providers/shipping-rate.service';
     // summary builders and by checkout, so the price quoted in the cart is the
     // price the order is actually created with.
     ShippingRateService,
+    // Single source of truth for the inclusive-tax split, shared by the cart
+    // quote and by checkout for the same reason ShippingRateService is.
+    TaxService,
     ReservationWorkerService,
     TracingInterceptor,
     RazorpayProvider,
@@ -146,6 +150,6 @@ import { ShippingRateService } from './providers/shipping-rate.service';
       labelNames: ['operation'],
     }),
   ],
-  exports: [CartService, CheckoutService, CartMetricsService, ShippingRateService],
+  exports: [CartService, CheckoutService, CartMetricsService, ShippingRateService, TaxService],
 })
 export class CartModule { }

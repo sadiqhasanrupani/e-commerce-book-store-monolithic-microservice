@@ -31,6 +31,21 @@ export class OrderItem {
   total_price: number;
 
   /**
+   * Tax rate applied to this line at checkout, as a percentage. NULL means the
+   * line carried no tax, which is deliberately distinct from a stored 0.
+   *
+   * Snapshotted alongside `unit_price` rather than read back from the variant,
+   * so an admin editing the rate later cannot retroactively change what an
+   * existing invoice says the customer paid.
+   */
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
+  tax_percentage?: number | null;
+
+  /** Tax contained in this line's total, in MAJOR units. Component, not addition. */
+  @Column({ type: 'numeric', precision: 10, scale: 2, default: 0 })
+  tax_amount: number;
+
+  /**
    * Delivery state of this line, for *digital* formats only.
    *
    * NULL means one of three things, and the response DTO collapses the first

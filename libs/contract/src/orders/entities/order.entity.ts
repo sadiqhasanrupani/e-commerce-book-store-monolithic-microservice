@@ -61,6 +61,18 @@ export class Order {
   shipping_cost: number;
 
   /**
+   * Tax already contained in `total_amount`, in MAJOR units.
+   *
+   * Tax here is INCLUSIVE: this is a component OF the total, never an addition
+   * to it. Adding it to `total_amount` would double-charge. Captured at
+   * checkout from the locked variant rows and stored so the order and its
+   * invoice can show the split without re-deriving it from a rate an admin may
+   * since have changed.
+   */
+  @Column({ type: 'numeric', precision: 10, scale: 2, default: 0 })
+  tax_amount: number;
+
+  /**
    * Manual, admin-entered shipment details. There is no courier API
    * integration: an admin types the carrier name and AWB into
    * `PATCH /admin/orders/:id/fulfillment` when the parcel goes out, and the

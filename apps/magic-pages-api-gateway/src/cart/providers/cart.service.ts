@@ -21,6 +21,7 @@ import { BookFormat, isPhysicalFormat } from '@app/contract/books/enums/book-for
 import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { CartMetricsService } from '../metrics/cart-metrics.service';
 import { ShippingRateService } from './shipping-rate.service';
+import { TaxService } from './tax.service';
 
 const CART_CACHE_TTL = 3600; // 1 hour
 const RESERVATION_TTL = 900; // 15 minutes (authenticated users)
@@ -42,6 +43,7 @@ export class CartService {
     private readonly redisService: RedisService,
     private readonly metricsService: CartMetricsService,
     private readonly shippingRateService: ShippingRateService,
+    private readonly taxService: TaxService,
   ) { }
 
   /**
@@ -109,12 +111,24 @@ export class CartService {
       this.shippingRateService.cartHasPhysicalItems(validItems),
     );
 
+    // Tax already inside `subtotal`. Reported so the basket can show the split;
+    // deliberately NOT added to `total`, which would double-charge.
+    const tax = this.taxService.totalTax(
+      validItems.map((item) => ({
+        unitPrice: Number(item.unitPrice),
+        quantity: Number(item.qty),
+        includeTax: item.bookFormatVariant?.includeTax,
+        taxPercentage: item.bookFormatVariant?.taxPercentage,
+      })),
+    );
+
     return {
       cartId: cart.id,
       userId,
       items,
       subtotal,
       shipping,
+      tax,
       total: subtotal + shipping,
       totalItems: items.length,
       totalQuantity: items.reduce((acc, item) => acc + item.qty, 0),
