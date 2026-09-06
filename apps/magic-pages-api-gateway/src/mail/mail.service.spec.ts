@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 
 import { EMAIL_PROVIDER_TOKEN } from '@app/contract/mail/tokens/email-provider.token';
 import { EmailSendError, IEmailProvider, MailProvider } from '@app/contract/mail/interfaces/email-provider.interface';
+import { InvoiceEmailData } from '@app/contract/mail/interfaces/invoice-email.interface';
 
 import { captureEmailError } from './mail.test-utils';
 import { MailService } from './mail.service';
@@ -120,6 +121,104 @@ describe('MailService', () => {
       const { html } = provider.send.mock.calls[0][0];
 
       expect(html).not.toMatch(/minio|s3\.|amazonaws|digitaloceanspaces/i);
+    });
+  });
+
+  describe('sendInvoiceEmail', () => {
+    const invoiceData = (overrides: Partial<InvoiceEmailData> = {}): InvoiceEmailData => ({
+      invoiceNumber: 'INV-20260906-0001',
+      invoiceDate: '2026-09-06',
+      orderNumber: 'MP-000042',
+      currency: 'INR',
+      lines: [
+        {
+          title: 'The Digital Book',
+          quantity: 2,
+          unitPrice: '250.00',
+          lineTotal: '500.00',
+          taxRate: '18.00',
+          taxAmount: '76.27',
+        },
+        {
+          title: 'A Paperback',
+          quantity: 1,
+          unitPrice: '300.00',
+          lineTotal: '300.00',
+          taxRate: null,
+          taxAmount: '0.00',
+        },
+      ],
+      itemsTotal: '800.00',
+      shippingTotal: '50.00',
+      taxTotal: '76.27',
+      grandTotal: '850.00',
+      billTo: 'Ada Lovelace\n12, MG Road\nMumbai',
+      orderUrl: 'https://storefront.test/orders?order=42',
+      ...overrides,
+    });
+
+    it('renders the invoice as HTML in the body, with no attachment', async () => {
+      await service.sendInvoiceEmail('buyer@example.test', 'Ada', invoiceData());
+
+      expect(provider.send).toHaveBeenCalledTimes(1);
+      const params = provider.send.mock.calls[0][0];
+
+      expect(params.to).toBe('buyer@example.test');
+      expect(params.subject).toBe('Invoice INV-20260906-0001 — order MP-000042');
+      expect(params.html).toContain('INV-20260906-0001');
+      expect(params.html).toContain('The Digital Book');
+      expect(params.html).toContain('A Paperback');
+      // Neither provider supports attachments; `EmailSendParams` has no such
+      // field, and this asserts the template did not try to invent one.
+      expect(params).not.toHaveProperty('attachments');
+    });
+
+    /**
+     * The figures are the whole point of the document. They are passed in
+     * pre-formatted precisely so the template cannot re-derive them, and this
+     * checks the total the customer actually paid reaches the page intact.
+     */
+    it('prints the charged total and states the tax as inclusive', async () => {
+      const { html } = await service
+        .sendInvoiceEmail('buyer@example.test', 'Ada', invoiceData())
+        .then(() => provider.send.mock.calls[0][0]);
+
+      expect(html).toContain('850.00');
+      expect(html).toContain('50.00');
+      expect(html).toMatch(/tax inclusive/i);
+      expect(html).toContain('76.27');
+    });
+
+    /** A digital-only order pays no shipping, so it gets no shipping line. */
+    it('omits the shipping row when nothing was charged for shipping', async () => {
+      await service.sendInvoiceEmail('buyer@example.test', 'Ada', invoiceData({ shippingTotal: '0.00' }));
+
+      expect(provider.send.mock.calls[0][0].html).not.toContain('>Shipping<');
+    });
+
+    /**
+     * `order_items.tax_percentage` is nullable on purpose: NULL means the line
+     * was never taxed, which is distinct from a stored 0.
+     */
+    it('prints a dash rather than 0% for an untaxed line', async () => {
+      await service.sendInvoiceEmail('buyer@example.test', 'Ada', invoiceData());
+
+      const { html } = provider.send.mock.calls[0][0];
+      expect(html).toContain('18.00%');
+      expect(html).toContain('&mdash;');
+    });
+
+    it('escapes interpolated values', async () => {
+      await service.sendInvoiceEmail(
+        'buyer@example.test',
+        'Ada',
+        invoiceData({ lines: [{ ...invoiceData().lines[0], title: '<script>alert("x")</script> & Co' }] }),
+      );
+
+      const { html } = provider.send.mock.calls[0][0];
+      expect(html).not.toContain('<script>');
+      expect(html).toContain('&lt;script&gt;');
+      expect(html).toContain('&amp;');
     });
   });
 

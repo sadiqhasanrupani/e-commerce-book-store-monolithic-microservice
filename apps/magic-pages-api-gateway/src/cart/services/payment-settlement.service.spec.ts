@@ -12,16 +12,33 @@ import { FulfillmentStatus, PaymentStatus } from '@app/contract/orders/enums/ord
 
 import { OrderStatusLog } from '@app/contract/orders/entities/order-status-log.entity';
 
+import { Invoice } from '@app/contract/invoices/entities/invoice.entity';
+import { InvoiceItem } from '@app/contract/invoices/entities/invoice-item.entity';
+import { InvoiceEmailData } from '@app/contract/mail/interfaces/invoice-email.interface';
+
 import { PaymentSettlementService, SettlementOutcome } from './payment-settlement.service';
 import { DigitalDeliveryService } from '../../digital-delivery/providers/digital-delivery.service';
 import { PhysicalFulfillmentService } from '../../physical-fulfillment/providers/physical-fulfillment.service';
+import { InvoiceIssuanceService } from '../../invoices/providers/invoice-issuance.service';
+import { InvoiceNumberProvider } from '../../invoices/providers/invoice-number.provider';
 import { MailService } from '../../mail/mail.service';
 
 const TRANSACTION_ID = 'txn-uuid-1';
+const GATEWAY_REF = 'order_RazorpayRef1';
 const ORDER_ID = 42;
 const DIGITAL_ITEM_ID = 10;
 const PHYSICAL_ITEM_ID = 11;
 const BUYER_EMAIL = 'buyer@example.com';
+
+/**
+ * Fixture money, tax INCLUSIVE (a component of the total, never added to it):
+ *   ebook     250.00 x 1 = 250.00, 18% -> 250 * 18/118 = 38.14 tax
+ *   paperback 150.00 x 2 = 300.00,  5% -> 300 *  5/105 = 14.29 tax
+ *   items     = 550.00, shipping = 50.00, total_amount = 600.00, tax = 52.43
+ */
+const ORDER_TOTAL = '600.00';
+const ORDER_TAX = '52.43';
+const ORDER_SHIPPING = '50.00';
 
 /**
  * Settlement + digital delivery, wired together for real.
@@ -40,6 +57,7 @@ describe('PaymentSettlementService — digital delivery', () => {
     sendOrderConfirmationEmail: jest.Mock;
     sendOrderShippedEmail: jest.Mock;
     sendOrderDeliveredEmail: jest.Mock;
+    sendInvoiceEmail: jest.Mock;
   };
 
   /**
@@ -58,11 +76,27 @@ describe('PaymentSettlementService — digital delivery', () => {
     id: ORDER_ID,
     payment_status: state.orderPaymentStatus,
     fulfillment_status: state.orderFulfillmentStatus,
+    currency: 'INR',
+    total_amount: ORDER_TOTAL,
+    tax_amount: ORDER_TAX,
+    shipping_cost: ORDER_SHIPPING,
+    shipping_address: {
+      line1: '12, MG Road',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      postalCode: '400001',
+      country: 'IN',
+      phone: '+91-9876543210',
+    },
     user: { id: 7, email: BUYER_EMAIL, firstName: 'Ada' },
     items: [
       {
         id: DIGITAL_ITEM_ID,
         quantity: 1,
+        unit_price: '250.00',
+        total_price: '250.00',
+        tax_percentage: '18.00',
+        tax_amount: '38.14',
         bookFormatVariant: {
           id: 100,
           format: BookFormat.EBOOK,
@@ -73,9 +107,14 @@ describe('PaymentSettlementService — digital delivery', () => {
       {
         id: PHYSICAL_ITEM_ID,
         quantity: 2,
+        unit_price: '150.00',
+        total_price: '300.00',
+        tax_percentage: '5.00',
+        tax_amount: '14.29',
         bookFormatVariant: {
           id: 101,
           format: BookFormat.PAPERBACK,
+          isbn: '978-3-16-148410-0',
           book: { title: 'A Paperback' },
         },
       },
@@ -89,10 +128,20 @@ describe('PaymentSettlementService — digital delivery', () => {
     update: jest.fn(),
     decrement: jest.fn(),
     query: jest.fn(),
+    // Needed by InvoiceIssuanceService, which builds its rows through the
+    // manager the way the rest of the codebase does.
+    create: jest.fn((_entity: any, plain: any) => ({ ...plain })),
   };
 
   /** `order_status_logs` rows written during a settlement. */
   let statusLogs: OrderStatusLog[];
+
+  /** `invoices` rows, keyed by id, with the UNIQUE index on `order_id` modelled. */
+  let invoices: Map<string, Invoice>;
+  /** `invoice_items` rows. */
+  let invoiceItems: InvoiceItem[];
+  /** `invoice_daily_counters.counter` for today. */
+  let invoiceCounter: number;
 
   const queryRunner = {
     connect: jest.fn(),
@@ -103,6 +152,10 @@ describe('PaymentSettlementService — digital delivery', () => {
     isTransactionActive: true,
     isReleased: false,
     manager,
+    // Backs InvoiceNumberProvider's atomic daily-counter upsert. The invoice
+    // service opens its own query runner; this fake hands back the same object,
+    // which is harmless because every transaction control method is a spy.
+    query: jest.fn(() => Promise.resolve([{ counter: ++invoiceCounter }])),
   };
 
   /**
@@ -127,6 +180,9 @@ describe('PaymentSettlementService — digital delivery', () => {
     jest.clearAllMocks();
 
     statusLogs = [];
+    invoices = new Map();
+    invoiceItems = [];
+    invoiceCounter = 0;
     state = {
       transactionStatus: TransactionStatus.PENDING,
       orderPaymentStatus: PaymentStatus.PENDING,
@@ -148,6 +204,7 @@ describe('PaymentSettlementService — digital delivery', () => {
         return Promise.resolve({
           id: TRANSACTION_ID,
           status: state.transactionStatus,
+          gateway_ref_id: GATEWAY_REF,
           raw_response: {},
           order: buildOrder(),
         });
@@ -173,6 +230,28 @@ describe('PaymentSettlementService — digital delivery', () => {
       if (entity === Transaction) state.transactionStatus = value.status;
       if (entity === Order) state.orderPaymentStatus = value.payment_status;
       if (entity === OrderStatusLog) statusLogs.push(value);
+
+      if (entity === Invoice) {
+        const row = value as Invoice;
+
+        // The UNIQUE index on `invoices.order_id`, modelled faithfully: it — not
+        // any application check — is what makes invoicing exactly-once, because
+        // invoicing deliberately happens outside the settlement transaction.
+        const clash = [...invoices.values()].some((existing) => existing.orderId === row.orderId);
+        if (clash) {
+          return Promise.reject(Object.assign(new Error('duplicate key value'), { code: '23505' }));
+        }
+        const saved: Invoice = { ...row, id: `invoice-${invoices.size + 1}` };
+        invoices.set(saved.id, saved);
+        return Promise.resolve(saved);
+      }
+
+      if (entity === InvoiceItem) {
+        const rows = (Array.isArray(value) ? value : [value]) as InvoiceItem[];
+        invoiceItems.push(...rows);
+        return Promise.resolve(rows);
+      }
+
       return Promise.resolve(value);
     });
 
@@ -226,6 +305,18 @@ describe('PaymentSettlementService — digital delivery', () => {
       if (entity === OrderItem) {
         return { update: itemUpdate };
       }
+      if (entity === Invoice) {
+        return {
+          findOne: jest.fn(({ where }: { where: { orderId: number } }) =>
+            Promise.resolve([...invoices.values()].find((row) => row.orderId === where.orderId) ?? null),
+          ),
+          update: jest.fn((id: string, values: Partial<Invoice>) => {
+            const row = invoices.get(id);
+            if (row) Object.assign(row, values);
+            return Promise.resolve({ affected: row ? 1 : 0 });
+          }),
+        };
+      }
       return {};
     });
 
@@ -234,6 +325,7 @@ describe('PaymentSettlementService — digital delivery', () => {
       sendOrderConfirmationEmail: jest.fn().mockResolvedValue(undefined),
       sendOrderShippedEmail: jest.fn().mockResolvedValue(undefined),
       sendOrderDeliveredEmail: jest.fn().mockResolvedValue(undefined),
+      sendInvoiceEmail: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -245,6 +337,12 @@ describe('PaymentSettlementService — digital delivery', () => {
         // fulfilment (claim inside the transaction, e-mail after the commit),
         // and a mock would only assert that we call a function.
         PhysicalFulfillmentService,
+        // Also unmocked, and for the same reason: the guarantee under test is
+        // that a re-settled order produces exactly ONE invoice, and only the
+        // real service talking to a store that enforces the unique index can
+        // demonstrate that.
+        InvoiceIssuanceService,
+        InvoiceNumberProvider,
         { provide: DataSource, useValue: dataSource },
         { provide: MailService, useValue: mailService },
         { provide: ConfigService, useValue: { get: () => 'https://storefront.test' } },
@@ -547,6 +645,182 @@ describe('PaymentSettlementService — digital delivery', () => {
       expect(state.orderPaymentStatus).toBe(PaymentStatus.PAID);
       // The state change is what matters and it survives; only the e-mail is lost.
       expect(state.orderFulfillmentStatus).toBe(FulfillmentStatus.PROCESSING);
+    });
+  });
+
+  /**
+   * The accounting half, and the third peer of digital delivery and physical
+   * fulfilment.
+   *
+   * The difference worth holding on to: those two are per-fulfilment-channel
+   * and claim inside the settlement transaction, under the order's write lock.
+   * Invoicing is per ORDER and happens entirely AFTER the commit, so its
+   * exactly-once guarantee comes from the UNIQUE index on `invoices.order_id`
+   * rather than from a conditional UPDATE. The fake store above enforces that
+   * index, so these tests exercise the real mechanism.
+   */
+  describe('invoicing', () => {
+    /** The single invoice row in the store, for assertions. */
+    const onlyInvoice = (): Invoice => {
+      expect(invoices.size).toBe(1);
+      return [...invoices.values()][0];
+    };
+
+    it('raises exactly one invoice for a mixed order and e-mails it', async () => {
+      const outcome = await service.settleSuccess(TRANSACTION_ID);
+
+      expect(outcome).toBe(SettlementOutcome.PROCESSED);
+
+      const invoice = onlyInvoice();
+      // One invoice covering BOTH lines, not one per fulfilment channel.
+      expect(invoice.hasDigitalItems).toBe(true);
+      expect(invoice.hasPhysicalItems).toBe(true);
+      expect(invoiceItems).toHaveLength(2);
+
+      expect(mailService.sendInvoiceEmail).toHaveBeenCalledTimes(1);
+      const [email, name, data] = (
+        mailService.sendInvoiceEmail.mock.calls as Array<[string, string, InvoiceEmailData]>
+      )[0];
+      expect(email).toBe(BUYER_EMAIL);
+      expect(name).toBe('Ada');
+      expect(data.orderNumber).toBe('MP-000042');
+    });
+
+    /**
+     * The whole point of the feature: the invoice must state what the customer
+     * was actually charged, never a recomputation of it.
+     */
+    it('invoices the order total verbatim, with the inclusive tax as a component', async () => {
+      await service.settleSuccess(TRANSACTION_ID);
+
+      const invoice = onlyInvoice();
+      expect(invoice.totalAmount).toBe(ORDER_TOTAL);
+      expect(invoice.taxAmount).toBe(ORDER_TAX);
+      expect(invoice.discountAmount).toBe('0.00');
+      // subtotal + tax - discount reproduces the charged total exactly.
+      expect(Number(invoice.subtotal) + Number(invoice.taxAmount)).toBeCloseTo(Number(ORDER_TOTAL), 2);
+      // The Razorpay reference rides along for reconciliation.
+      expect(invoice.gatewayTransactionRef).toBe(GATEWAY_REF);
+    });
+
+    /**
+     * THE regression this hook must never lose, and the mirror of the digital
+     * and physical "does not send again" tests.
+     *
+     * Settlement is reachable three ways (webhook, reconciliation cron,
+     * `verifyOrder` poll) and all three routinely land on the same order. A
+     * second invoice would be a second financial document for money that was
+     * only taken once. The transaction-status gate alone would satisfy this, so
+     * the body is forced to re-run: only the invoice row's existence — and,
+     * behind it, the unique index — can stop the second one.
+     */
+    it('does not invoice again when settlement re-runs its body on an already-invoiced order', async () => {
+      await service.settleSuccess(TRANSACTION_ID);
+      expect(invoices.size).toBe(1);
+      expect(mailService.sendInvoiceEmail).toHaveBeenCalledTimes(1);
+
+      state.transactionStatus = TransactionStatus.PENDING;
+      state.orderPaymentStatus = PaymentStatus.PENDING;
+
+      await service.settleSuccess(TRANSACTION_ID);
+
+      expect(invoices.size).toBe(1);
+      expect(invoiceItems).toHaveLength(2);
+      expect(mailService.sendInvoiceEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not invoice again when the same transaction is settled twice', async () => {
+      const first = await service.settleSuccess(TRANSACTION_ID);
+      const second = await service.settleSuccess(TRANSACTION_ID);
+
+      expect(first).toBe(SettlementOutcome.PROCESSED);
+      expect(second).toBe(SettlementOutcome.ALREADY_PROCESSED);
+      expect(invoices.size).toBe(1);
+      expect(mailService.sendInvoiceEmail).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * A cancelled-but-paid order needs a refund, not paperwork. Issuing an
+     * invoice would hand the customer a document for goods we are about to give
+     * back.
+     */
+    it('raises no invoice when payment lands on an already-cancelled order', async () => {
+      state.orderFulfillmentStatus = FulfillmentStatus.CANCELLED;
+
+      const outcome = await service.settleSuccess(TRANSACTION_ID);
+
+      expect(outcome).toBe(SettlementOutcome.REFUND_REQUIRED);
+      expect(invoices.size).toBe(0);
+      expect(mailService.sendInvoiceEmail).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Invoicing is the least important thing that happens here. A customer who
+     * paid must still get their download and their order queued for fulfilment
+     * even if the invoice path fails outright, and Razorpay must not be made to
+     * redeliver a webhook we handled correctly.
+     */
+    it('still settles the payment and delivers the download when invoicing fails', async () => {
+      manager.create.mockImplementationOnce(() => {
+        throw new Error('invoices table missing');
+      });
+
+      const outcome = await service.settleSuccess(TRANSACTION_ID);
+
+      expect(outcome).toBe(SettlementOutcome.PROCESSED);
+      expect(state.transactionStatus).toBe(TransactionStatus.SUCCESS);
+      expect(state.orderPaymentStatus).toBe(PaymentStatus.PAID);
+      expect(state.itemDeliveryStatus.get(DIGITAL_ITEM_ID)).toBe(DigitalDeliveryStatus.DELIVERED);
+      expect(mailService.sendDigitalDeliveryEmail).toHaveBeenCalledTimes(1);
+      expect(invoices.size).toBe(0);
+    });
+
+    it('still settles the payment when the invoice e-mail fails', async () => {
+      mailService.sendInvoiceEmail.mockRejectedValue(new Error('SMTP unavailable'));
+
+      const outcome = await service.settleSuccess(TRANSACTION_ID);
+
+      expect(outcome).toBe(SettlementOutcome.PROCESSED);
+      // The accounting record survives; only the e-mail is lost.
+      expect(onlyInvoice().issuedAt).toBeNull();
+    });
+
+    /**
+     * Invoicing is per order, not per delivery channel, so an order with
+     * nothing to e-mail still gets an invoice — and that invoice e-mail is the
+     * only mail a physical-only buyer receives beyond their confirmation.
+     */
+    it('invoices a physical-only order too', async () => {
+      manager.findOne.mockImplementation((entity: any, options: any) => {
+        if (entity === Transaction) {
+          if (options?.select) {
+            return Promise.resolve({ id: TRANSACTION_ID, status: state.transactionStatus });
+          }
+          const order = buildOrder();
+          order.items = order.items.filter((item: any) => item.id === PHYSICAL_ITEM_ID);
+          return Promise.resolve({
+            id: TRANSACTION_ID,
+            status: state.transactionStatus,
+            gateway_ref_id: GATEWAY_REF,
+            raw_response: {},
+            order,
+          });
+        }
+        if (entity === Order) {
+          return Promise.resolve({
+            id: ORDER_ID,
+            payment_status: state.orderPaymentStatus,
+            fulfillment_status: state.orderFulfillmentStatus,
+          });
+        }
+        return Promise.resolve(null);
+      });
+
+      await service.settleSuccess(TRANSACTION_ID);
+
+      expect(mailService.sendDigitalDeliveryEmail).not.toHaveBeenCalled();
+      expect(mailService.sendInvoiceEmail).toHaveBeenCalledTimes(1);
+      expect(invoices.size).toBe(1);
     });
   });
 });

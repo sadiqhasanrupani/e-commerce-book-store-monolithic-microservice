@@ -15,6 +15,10 @@ import {
   PhysicalFulfillmentClaim,
   PhysicalFulfillmentService,
 } from '../../physical-fulfillment/providers/physical-fulfillment.service';
+import {
+  InvoiceIssuanceClaim,
+  InvoiceIssuanceService,
+} from '../../invoices/providers/invoice-issuance.service';
 
 /**
  * What a settlement attempt did, so callers can log/report accurately.
@@ -68,6 +72,18 @@ export class PaymentSettlementService {
      * produces identical state.
      */
     private readonly physicalFulfillmentService: PhysicalFulfillmentService,
+
+    /**
+     * The third peer of the two above, and the only one that is per-ORDER
+     * rather than per-fulfilment-channel: whatever the basket contained, a paid
+     * order gets exactly one invoice, raised and e-mailed from here so that all
+     * three settlement callers produce identical state.
+     *
+     * Unlike the other two it does no database work inside the transaction —
+     * see `InvoiceIssuanceService` for why an invoicing failure must not be
+     * able to roll back a payment.
+     */
+    private readonly invoiceIssuanceService: InvoiceIssuanceService,
   ) {}
 
   /**
@@ -100,6 +116,15 @@ export class PaymentSettlementService {
      * after the commit.
      */
     let physicalClaim: PhysicalFulfillmentClaim = { orderId: 0, claimed: false };
+
+    /**
+     * Whether THIS call was the one that moved the order to PAID, and therefore
+     * owes the buyer an invoice. Set under the order lock like the other two
+     * claims, and acted on only after the commit — but unlike them it costs no
+     * query, because nothing about invoicing may be able to abort the
+     * settlement transaction.
+     */
+    let invoiceClaim: InvoiceIssuanceClaim = { orderId: 0, claimed: false, gatewayRef: null };
 
     try {
       const transaction = await queryRunner.manager.findOne(Transaction, {
@@ -224,6 +249,18 @@ export class PaymentSettlementService {
         // lands on a cancelled order needs a refund, not fulfilment.
         physicalClaim = await this.physicalFulfillmentService.markProcessing(queryRunner.manager, order);
 
+        // The accounting half. Reached only on the call that actually flipped
+        // the order to PAID, and only past the CANCELLED early-return above —
+        // a payment that lands on a cancelled order needs a refund, and
+        // invoicing it would issue a document for goods we are about to give
+        // back.
+        //
+        // Unlike the two claims above this touches nothing: it records a fact
+        // settlement already knows. Everything the invoice needs — the row, the
+        // number, the e-mail — happens after the commit, so an invoicing
+        // failure can never roll back a payment or a buyer's download.
+        invoiceClaim = this.invoiceIssuanceService.claimForOrder(order, transaction.gateway_ref_id ?? null);
+
         if (order.user?.id) {
           const cart = await queryRunner.manager.findOne(Cart, {
             where: { userId: order.user.id, status: CartStatus.CHECKOUT },
@@ -248,6 +285,14 @@ export class PaymentSettlementService {
       // own failures. Sends nothing when this call did not make the claim, so
       // a re-settled order does not confirm itself twice.
       await this.physicalFulfillmentService.dispatchOrderConfirmation(physicalClaim);
+
+      // Last of the three, on purpose: the buyer's download and the fulfilment
+      // queue matter more than the paperwork, so nothing about invoicing may
+      // delay them. Same contract as the other two — after the commit, and it
+      // swallows its own failures. Exactly-once is enforced by the UNIQUE index
+      // on `invoices.order_id`, not by this claim alone, so a redelivered
+      // webhook cannot produce a second invoice or a second e-mail.
+      await this.invoiceIssuanceService.dispatchClaim(invoiceClaim);
 
       return SettlementOutcome.PROCESSED;
     } catch (error) {

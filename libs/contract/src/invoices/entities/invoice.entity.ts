@@ -43,6 +43,24 @@ export interface BillingAddressSnapshot {
 @Index(['status'])
 @Index(['invoiceDate'])
 @Index(['userId'])
+/**
+ * One invoice per order, enforced by the database.
+ *
+ * Payment settlement raises invoices automatically, and settlement is re-entered
+ * by design from three callers (the Razorpay webhook, the reconciliation cron,
+ * and the storefront's `verifyOrder` poll), two of which can be in flight for
+ * the same order at once. Invoicing happens AFTER the settlement transaction
+ * commits — deliberately, so an invoicing failure can never roll back a payment
+ * — which puts it outside the order row lock that makes the other post-payment
+ * claims exactly-once. Out there, only this constraint can serialise two
+ * writers, so it is the actual guarantee rather than a belt-and-braces index.
+ *
+ * `InvoiceIssuanceService` treats the resulting `23505` as "already invoiced"
+ * and sends no second e-mail. Named explicitly so `synchronize` (development)
+ * and `1765600100000-AddUniqueOrderIdToInvoices` (migrations) create the same
+ * object rather than two equivalent ones.
+ */
+@Index('UQ_invoices_order_id', ['orderId'], { unique: true })
 export class Invoice {
   @PrimaryGeneratedColumn('uuid')
   id: string;

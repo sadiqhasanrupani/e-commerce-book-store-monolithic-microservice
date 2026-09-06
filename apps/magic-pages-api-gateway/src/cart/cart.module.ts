@@ -38,6 +38,7 @@ import { TracingInterceptor } from './interceptors/tracing.interceptor';
 import { SessionIdGuard } from './guards/session-id.guard';
 import { DigitalDeliveryModule } from '../digital-delivery/digital-delivery.module';
 import { PhysicalFulfillmentModule } from '../physical-fulfillment/physical-fulfillment.module';
+import { InvoiceIssuanceModule } from '../invoices/invoice-issuance.module';
 import { ShippingRateService } from './providers/shipping-rate.service';
 import { TaxService } from './providers/tax.service';
 
@@ -52,6 +53,10 @@ import { TaxService } from './providers/tax.service';
     // PaymentSettlementService moves an order containing shippable lines into
     // the fulfilment queue and sends the buyer a confirmation.
     PhysicalFulfillmentModule,
+    // The accounting counterpart of the two above: on a successful settlement
+    // PaymentSettlementService raises exactly one invoice for the order and
+    // e-mails it to the buyer.
+    InvoiceIssuanceModule,
     ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
       imports: [RedisModule],

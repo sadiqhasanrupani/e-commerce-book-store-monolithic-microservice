@@ -3,6 +3,7 @@ import { Retry, Timeout, CircuitBreaker } from 'libs/common/src';
 
 import { EMAIL_PROVIDER_TOKEN } from '@app/contract/mail/tokens/email-provider.token';
 import { EmailSendError, IEmailProvider } from '@app/contract/mail/interfaces/email-provider.interface';
+import { InvoiceEmailData } from '@app/contract/mail/interfaces/invoice-email.interface';
 
 /**
  * Application-facing mail API.
@@ -315,6 +316,125 @@ export class MailService implements OnModuleInit {
       await this.dispatch(email, subject, html);
 
       this.logger.log(`Order delivered email sent successfully for ${orderNumber} to ${email}`);
+    });
+  }
+
+  /**
+   * Send the tax invoice for a paid order.
+   *
+   * Rendered as HTML in the message body rather than attached as a PDF, and
+   * that is a decision rather than an omission: `EmailSendParams` — the seam
+   * every transport goes through — carries only `to`/`subject`/`html`/`text`,
+   * and NEITHER provider implements attachments (`SmtpProvider` forwards those
+   * four fields to nodemailer, `ResendProvider` forwards the same four to the
+   * Resend API). Attaching a PDF would therefore mean widening the provider
+   * contract, implementing it twice, and adding a PDF renderer to a dependency
+   * list that has none. An HTML invoice needs none of that, renders in every
+   * client, stays searchable in the buyer's mailbox, and can be printed to PDF
+   * by the reader if they want one.
+   *
+   * This method does no arithmetic. Every figure in `data` was read off the
+   * recorded order and formatted by `InvoiceIssuanceService`, so the invoice
+   * cannot disagree with what the customer was charged — see
+   * {@link InvoiceEmailData}.
+   *
+   * Throws on definitive failure (after `@Retry` and the circuit breaker).
+   * `InvoiceIssuanceService` swallows that: the invoice row is already durable,
+   * and a mail outage must not turn a settled payment into a 500.
+   *
+   * @param email buyer's address, read from `order.user.email` — never from
+   *        anything client-supplied
+   * @param name  buyer's first name, optional
+   */
+  @Retry({
+    maxAttempts: 3,
+    delayMs: 1000,
+    exponentialBackoff: true,
+    maxDelayMs: 10000,
+  })
+  @Timeout(10000)
+  async sendInvoiceEmail(email: string, name: string | undefined, data: InvoiceEmailData): Promise<void> {
+    return await this.emailCircuitBreaker.execute(async () => {
+      this.logger.log(`Sending invoice ${data.invoiceNumber} for ${data.orderNumber} to ${email}`);
+
+      const subject = `Invoice ${data.invoiceNumber} — order ${data.orderNumber}`;
+      const greeting = name ? `, ${name}` : '';
+      const currency = escapeHtml(data.currency);
+
+      const rows = data.lines
+        .map((line) => {
+          // An untaxed line prints an em dash rather than "0.00%", so "this line
+          // carried no tax" stays distinguishable from "this line was taxed at
+          // zero" — the same distinction `order_items.tax_percentage` stores as
+          // NULL versus 0.
+          const rate = line.taxRate === null ? '&mdash;' : `${escapeHtml(line.taxRate)}%`;
+
+          return `
+            <tr>
+              <td style="padding:6px 10px;border-bottom:1px solid #eee;">${escapeHtml(line.title)}</td>
+              <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">${line.quantity}</td>
+              <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">${escapeHtml(line.unitPrice)}</td>
+              <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">${rate}</td>
+              <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;">${escapeHtml(line.lineTotal)}</td>
+            </tr>`;
+        })
+        .join('');
+
+      // Shipping is shown only when something was actually charged for it, so a
+      // digital-only invoice does not carry a meaningless "Shipping 0.00" line.
+      const shippingRow =
+        Number(data.shippingTotal) > 0
+          ? `<tr>
+               <td style="padding:4px 10px;text-align:right;" colspan="4">Shipping</td>
+               <td style="padding:4px 10px;text-align:right;">${currency} ${escapeHtml(data.shippingTotal)}</td>
+             </tr>`
+          : '';
+
+      const billToBlock = data.billTo
+        ? `<p style="margin:0 0 16px;"><strong>Billed to</strong><br/>${escapeHtml(data.billTo).replace(/\n/g, '<br/>')}</p>`
+        : '';
+
+      const html = `
+        <h1>Your invoice${escapeHtml(greeting)}</h1>
+        <p>Here is the tax invoice for order <strong>${escapeHtml(data.orderNumber)}</strong>.</p>
+        <p style="margin:0 0 4px;"><strong>Invoice number:</strong> ${escapeHtml(data.invoiceNumber)}</p>
+        <p style="margin:0 0 16px;"><strong>Invoice date:</strong> ${escapeHtml(data.invoiceDate)}</p>
+        ${billToBlock}
+        <table style="border-collapse:collapse;width:100%;max-width:640px;">
+          <thead>
+            <tr>
+              <th style="padding:6px 10px;border-bottom:2px solid #333;text-align:left;">Item</th>
+              <th style="padding:6px 10px;border-bottom:2px solid #333;text-align:right;">Qty</th>
+              <th style="padding:6px 10px;border-bottom:2px solid #333;text-align:right;">Unit price</th>
+              <th style="padding:6px 10px;border-bottom:2px solid #333;text-align:right;">Tax rate</th>
+              <th style="padding:6px 10px;border-bottom:2px solid #333;text-align:right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+            <tr>
+              <td style="padding:4px 10px;text-align:right;" colspan="4">Items</td>
+              <td style="padding:4px 10px;text-align:right;">${currency} ${escapeHtml(data.itemsTotal)}</td>
+            </tr>
+            ${shippingRow}
+            <tr>
+              <td style="padding:8px 10px;text-align:right;border-top:2px solid #333;" colspan="4">
+                <strong>Total paid</strong>
+              </td>
+              <td style="padding:8px 10px;text-align:right;border-top:2px solid #333;">
+                <strong>${currency} ${escapeHtml(data.grandTotal)}</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="margin:12px 0;">All prices are tax inclusive. This total includes tax of
+           <strong>${currency} ${escapeHtml(data.taxTotal)}</strong>.</p>
+        <p><a href="${escapeHtml(data.orderUrl)}">View your order</a></p>
+      `;
+
+      await this.dispatch(email, subject, html);
+
+      this.logger.log(`Invoice ${data.invoiceNumber} sent successfully to ${email}`);
     });
   }
 

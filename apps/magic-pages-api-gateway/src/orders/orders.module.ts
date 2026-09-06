@@ -18,6 +18,7 @@ import { RazorpayProvider } from '../cart/providers/razorpay.provider';
 import { PaymentSettlementService } from '../cart/services/payment-settlement.service';
 import { DigitalDeliveryModule } from '../digital-delivery/digital-delivery.module';
 import { PhysicalFulfillmentModule } from '../physical-fulfillment/physical-fulfillment.module';
+import { InvoiceIssuanceModule } from '../invoices/invoice-issuance.module';
 import { UploadModule } from '../upload/upload.module';
 
 @Module({
@@ -36,6 +37,11 @@ import { UploadModule } from '../upload/upload.module';
     // e-mails after its transaction commits. It re-exports MailModule's
     // MailService transitively, so nothing else here needs to import mail.
     PhysicalFulfillmentModule,
+    // Also required by the PaymentSettlementService declared below: `verifyOrder`
+    // can be the first caller to observe a payment, so it must raise and e-mail
+    // the invoice exactly as the webhook does. Declared as its own small module
+    // (rather than importing InvoicesModule) to keep AuthModule out of this graph.
+    InvoiceIssuanceModule,
     // `UploadToStorageProvider` — the in-process owner of S3/MinIO reads — backs
     // the item download endpoint.
     UploadModule,
