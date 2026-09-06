@@ -25,10 +25,7 @@ import { CreateBookDto } from '@app/contract/books/dtos/create-book.dto';
 import { In } from 'typeorm';
 import { DeleteBookProvider } from './delete-book.provider';
 import { DeleteOption } from '@app/contract/books/types/delete-book.type';
-import {
-  FindAllBookResponse,
-  FindOneBookOption,
-} from '@app/contract/books/types/find-book.type';
+import { FindAllBookResponse, FindOneBookOption } from '@app/contract/books/types/find-book.type';
 import { FindBookProvider } from './find-book.provider';
 import { BufferType } from '@app/contract/books/types/upload-book-file.type';
 import { BookFormatVariant } from '@app/contract/books/entities/book-format-varient.entity';
@@ -84,7 +81,7 @@ export class BooksService {
 
     /** Inject createBookProvider */
     private readonly createBookProvider: CreateBookProvider,
-  ) { } //eslint-disable-line
+  ) {} //eslint-disable-line
 
   /**
    * Extracts the object storage key (path inside the bucket) from a full URL.
@@ -389,25 +386,28 @@ export class BooksService {
       // 3.b create variants — map DTO.variants -> BookFormatVariant rows
       const variantsToSave = createBookDto.variants.map((vDto, idx) => {
         const variant: Partial<BookFormatVariant> = {
-          // because BookFormatVariant.id is number PK and bookId is number in your current model,
-          // but you told me to keep variant IDs as number — however book id is UUID so we must set book relation properly.
-          // Note: TypeORM will set book relation via book property or book_id column; we set book (relation) here.
           book: savedBook,
-          format: vDto.format as any,
-          // priceCents on variant DTO is 'priceCents' — use appropriate column names (price in your entity is numeric; we used priceCents on DTO)
-          // Convert integer cents to numeric stored value as string/number depending on DB mapping. Here we store as numeric/decimal:
-          price: typeof (vDto as any).priceCents !== 'undefined' ? (vDto as any).priceCents / 100 : undefined,
-          stockQuantity: isPhysicalFormat(vDto.format as any) ? (vDto.stockQuantity ?? 0) : 0,
-          reservedQuantity: 0,
-          fileUrl: variantFileUrls[idx] ?? vDto.fileUrl ?? null,
-          isbn: vDto.isbn,
 
-          // NOTE: These are FUTURE features, currently they don't need any kind of attention
-          // previewPageCount: vDto.previewPageCount ?? 0,
-          // previewFileUrl: vDto.previewFileUrl ?? null,
-          // weightG: vDto.weightG ?? null,
+          format: vDto.format,
+
+          originalPrice: vDto.originalPriceCents !== undefined ? vDto.originalPriceCents / 100 : 0,
+
+          price: vDto.priceCents !== undefined ? vDto.priceCents / 100 : 0,
+
+          includeTax: vDto.includeTax ?? false,
+
+          taxPercentage: vDto.taxPercentage ?? undefined,
+
+          stockQuantity: isPhysicalFormat(vDto.format as any) ? (vDto.stockQuantity ?? 0) : 0,
+
+          reservedQuantity: 0,
+
+          fileUrl: variantFileUrls[idx] ?? vDto.fileUrl ?? null,
+
+          isbn: vDto.isbn ?? null,
         };
-        return queryRunner.manager.create(BookFormatVariant as any, variant);
+
+        return queryRunner.manager.create(BookFormatVariant, variant);
       });
 
       // Save all variants (in loop to allow DB adapter to assign numeric PKs correctly)
@@ -518,7 +518,7 @@ export class BooksService {
     const result = await this.findBookProvider.findAll(queryParams, options);
 
     const transformedData = result.data.map((book) =>
-      this.transformBookToResponse(book, options?.userContext),
+      this.transformBookToResponse(book, options?.userContext, { isAdmin: options?.isAdmin }),
     );
 
     return {
@@ -536,16 +536,13 @@ export class BooksService {
     opts?: FindOneBookOption & { isAdmin?: boolean; userContext?: UserContext },
   ): Promise<BookResponseDto> {
     const book = await this.findBookProvider.findOne(id, opts);
-    return this.transformBookToResponse(book, opts?.userContext);
+    return this.transformBookToResponse(book, opts?.userContext, { isAdmin: opts?.isAdmin });
   }
 
   /**
    * Find related books based on genre.
    */
-  async findRelated(
-    id: string,
-    options?: { userContext?: UserContext },
-  ): Promise<BookResponseDto[]> {
+  async findRelated(id: string, options?: { userContext?: UserContext }): Promise<BookResponseDto[]> {
     // 1. Get the current book to find its genre
     const currentBook = await this.findBookProvider.findOne(id);
 
@@ -563,12 +560,31 @@ export class BooksService {
     // 3. Filter out the current book and transform
     return result.data
       .filter((book) => book.id !== id)
-      .map((book) => this.transformBookToResponse(book, options?.userContext));
+      // "Related books" is a storefront rail on a public page — never an admin view.
+      .map((book) => this.transformBookToResponse(book, options?.userContext, { isAdmin: false }));
   }
 
-  private transformBookToResponse(book: Book, context?: UserContext): BookResponseDto {
+  /**
+   * Map a `Book` entity onto the camelCase response contract.
+   *
+   * @param context locale/currency of the caller, used to pick a price.
+   * @param options `isAdmin` marks a caller that came in through
+   *   `/admin/books/*` behind the admin role guard. It gates `variant.fileUrl`:
+   *   that column holds the paid deliverable's storage URL, so it is returned
+   *   only to the admin book-edit form (which needs to show and replace the
+   *   attached file) and is stripped for every public/storefront caller. Buyers
+   *   never need it — they download through
+   *   `GET /user/orders/:id/items/:itemId/download`, which checks ownership and
+   *   payment and streams the object.
+   */
+  private transformBookToResponse(
+    book: Book,
+    context?: UserContext,
+    options?: { isAdmin?: boolean },
+  ): BookResponseDto {
     const currency = context?.currency || 'INR';
     const locale = context?.locale || 'en-IN';
+    const isAdmin = !!options?.isAdmin;
 
     const variants: BookVariantResponseDto[] = (book.formats || []).map((variant) => {
       let priceAmount = variant.price;
@@ -586,10 +602,20 @@ export class BooksService {
         currency: priceCurrency,
       }).format(priceAmount);
 
+      const isPhysical = isPhysicalFormat(variant.format as any);
+
+      // A digital variant's `fileUrl` IS the product. Exposing it on a public
+      // catalogue response would let anyone read the paid file straight out of
+      // the browse/PDP JSON, so it only ever travels to an admin caller.
+      // Physical variants keep the existing behaviour: the column is unused for
+      // them (nothing downloadable ships with a hardcover), so there is nothing
+      // to protect and nothing to change.
+      const canSeeFileUrl = isAdmin || isPhysical;
+
       return {
         id: variant.id,
         format: variant.format,
-        isPhysical: isPhysicalFormat(variant.format as any),
+        isPhysical,
         price: {
           amount: priceAmount,
           currency: priceCurrency,
@@ -597,7 +623,7 @@ export class BooksService {
         },
         stockQuantity: variant.stockQuantity,
         reservedQuantity: variant.reservedQuantity,
-        fileUrl: variant.fileUrl ?? undefined,
+        fileUrl: canSeeFileUrl ? (variant.fileUrl ?? undefined) : undefined,
         isbn: variant.isbn ?? undefined,
       };
     });
@@ -627,9 +653,9 @@ export class BooksService {
       isArchived: book.isArchived,
       bullets: book.bullets,
       shortDescription: book.shortDescription,
-      ageGroupIds: book.ageGroups?.map(ag => ag.id) ?? [],
+      ageGroupIds: book.ageGroups?.map((ag) => ag.id) ?? [],
       categories: book.categories,
-      tagIds: book.tags?.map(t => t.id) ?? [],
+      tagIds: book.tags?.map((t) => t.id) ?? [],
     };
   }
 
@@ -782,7 +808,6 @@ export class BooksService {
           }
         }
       }
-
     } catch (uploadErr) {
       // If upload fails, attempt to cleanup newly uploaded keys and throw
       console.error('updateBook: upload failed, cleaning up new uploads', uploadErr);
@@ -837,7 +862,7 @@ export class BooksService {
         'snapshots',
         'coverImageUrl',
         'bullets',
-        'shortDescription'
+        'shortDescription',
       ] as any;
 
       // Handle Age Groups
@@ -877,6 +902,9 @@ export class BooksService {
           (bookPatch as any)[f === 'metaTitle' ? 'metaTitle' : f] = (dto as any)[f];
         }
       }
+
+      console.log(`[books.service]::${Date.now()}::update book dto:: `, dto);
+      console.log(`[books.service]::${Date.now()}::book patch data:: `, bookPatch);
 
       // Attach uploaded new URLs if any (replace behavior)
       if (newCoverUrl) {
@@ -919,14 +947,14 @@ export class BooksService {
 
           // Strategy 1: Match by ID (Explicit)
           if (vDto.id) {
-            matchedVariant = existing.formats?.find(ev => ev.id === vDto.id);
+            matchedVariant = existing.formats?.find((ev) => ev.id === vDto.id);
           }
 
           // Strategy 2: Match by Format (Implicit, if ID not provided or not found)
           // Only match if this existing variant hasn't been claimed yet
           if (!matchedVariant && vDto.format) {
-            matchedVariant = existing.formats?.find(ev =>
-              ev.format === vDto.format && !claimedExistingIds.has(ev.id)
+            matchedVariant = existing.formats?.find(
+              (ev) => ev.format === vDto.format && !claimedExistingIds.has(ev.id),
             );
           }
 
@@ -936,14 +964,21 @@ export class BooksService {
             variantsToUpdate.push({
               entity: matchedVariant,
               dto: vDto,
-              fileUrl: variantNewFileUrls[i]
+              fileUrl: variantNewFileUrls[i],
             });
           } else {
             // Create new
             const createPayload: Partial<BookFormatVariant> = {
               book: savedBook,
               format: vDto.format,
+              originalPrice:
+                (vDto as any).originalPriceCents !== undefined ? (vDto as any).originalPriceCents / 100 : 0,
               price: (vDto as any).priceCents !== undefined ? (vDto as any).priceCents / 100 : 0,
+              includeTax: (vDto as any).includeTax !== undefined ? (vDto as any).includeTax : false,
+              // Carried through like the top-level create path does. Without
+              // this, a variant added while editing a book silently lost its
+              // tax rate even though the same payload keeps it on create.
+              taxPercentage: (vDto as any).taxPercentage ?? undefined,
               stockQuantity: isPhysicalFormat(vDto.format as any) ? (vDto.stockQuantity ?? 0) : 0,
               reservedQuantity: 0,
               fileUrl: variantNewFileUrls[i] ?? vDto.fileUrl ?? null,
@@ -960,7 +995,29 @@ export class BooksService {
         const updatePayload: Partial<BookFormatVariant> = {};
 
         if (vDto.format !== undefined) updatePayload.format = vDto.format;
-        if ((vDto as any).priceCents !== undefined) updatePayload.price = (vDto as any).priceCents / 100;
+        if (vDto.priceCents !== undefined) {
+          updatePayload.price = vDto.priceCents / 100;
+        }
+
+        if (vDto.originalPriceCents !== undefined) {
+          updatePayload.originalPrice = vDto.originalPriceCents / 100;
+        }
+
+        if (vDto.includeTax !== undefined) {
+          updatePayload.includeTax = vDto.includeTax;
+        }
+
+        // `includeTax === false` wins over any rate in the same payload:
+        // switching tax off clears the column rather than leaving a stale rate
+        // behind to reappear if tax were re-enabled later. The admin form only
+        // sends `taxPercentage` while the toggle is on, so in practice these
+        // two never arrive together -- this just makes the precedence explicit
+        // instead of order-dependent.
+        if (vDto.includeTax === false) {
+          updatePayload.taxPercentage = null as unknown as undefined;
+        } else if (vDto.taxPercentage !== undefined) {
+          updatePayload.taxPercentage = vDto.taxPercentage;
+        }
         if (vDto.stockQuantity !== undefined) {
           const effectiveFormat = vDto.format ?? entity.format;
           updatePayload.stockQuantity = isPhysicalFormat(effectiveFormat as any) ? vDto.stockQuantity : 0;
@@ -990,9 +1047,9 @@ export class BooksService {
 
       // 3.d Delete Unclaimed (only if variants were provided in DTO)
       if (dto.variants !== undefined) {
-        const variantsToDelete = existing.formats?.filter(ev => !claimedExistingIds.has(ev.id)) ?? [];
+        const variantsToDelete = existing.formats?.filter((ev) => !claimedExistingIds.has(ev.id)) ?? [];
         if (variantsToDelete.length > 0) {
-          const deleteIds = variantsToDelete.map(v => v.id);
+          const deleteIds = variantsToDelete.map((v) => v.id);
           await qr.manager.delete(BookFormatVariant, deleteIds);
 
           // schedule deletion of files for deleted variants after commit

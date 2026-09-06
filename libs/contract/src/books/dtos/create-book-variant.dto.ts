@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { BookFormat } from '../enums/book-format.enum';
 
 export class CreateBookVariantDto {
@@ -16,6 +16,24 @@ export class CreateBookVariantDto {
   @IsInt()
   @Min(0)
   stockQuantity?: number;
+
+  /** Original price cents */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  originalPriceCents?: number;
+
+  /** Include Tax */
+  @IsOptional()
+  @IsBoolean()
+  includeTax?: boolean;
+
+  /** Percentage of tax  */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  taxPercentage?: number;
 
   /** Optional file URL for digital items. */
   @IsOptional()
