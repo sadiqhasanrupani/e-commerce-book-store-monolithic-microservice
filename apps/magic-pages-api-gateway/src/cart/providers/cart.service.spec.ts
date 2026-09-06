@@ -7,7 +7,7 @@ import { BookFormatVariant } from '@app/contract/books/entities/book-format-vari
 import { Book } from '@app/contract/books/entities/book.entity';
 import { RedisService } from '@app/redis';
 import { DataSource, Repository } from 'typeorm';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { BookFormat } from '@app/contract/books/enums/book-format.enum';
 import { CartMetricsService } from '../metrics/cart-metrics.service';
@@ -22,6 +22,7 @@ describe('CartService', () => {
   let redisService: jest.Mocked<RedisService>;
   let dataSource: jest.Mocked<DataSource>;
   let queryRunnerMock: any;
+  let managerQb: any;
   let shippingRateService: { resolveShippingCost: jest.Mock; cartHasPhysicalItems: jest.Mock };
 
   const mockCart = {
@@ -90,6 +91,22 @@ describe('CartService', () => {
       }),
     };
 
+    managerQb = {};
+    for (const method of [
+      'innerJoinAndSelect',
+      'leftJoinAndSelect',
+      'setLock',
+      'where',
+      'andWhere',
+      'update',
+      'set',
+      'setParameters',
+    ]) {
+      managerQb[method] = jest.fn(() => managerQb);
+    }
+    managerQb.getOne = jest.fn();
+    managerQb.execute = jest.fn(() => Promise.resolve({ affected: 1 }));
+
     queryRunnerMock = {
       connect: jest.fn(),
       startTransaction: jest.fn(),
@@ -104,6 +121,12 @@ describe('CartService', () => {
         save: jest.fn((_entity: any, value: any) => Promise.resolve(value)),
         update: jest.fn(),
         remove: jest.fn(),
+        // The service locks the variant row with
+        // `.createQueryBuilder(BookFormatVariant, 'variant').setLock(...)` and
+        // does the reservation arithmetic with the no-arg
+        // `.createQueryBuilder().update()...execute()` form. One chainable
+        // double serves both shapes; tests drive `managerQb.getOne`.
+        createQueryBuilder: jest.fn(() => managerQb),
       },
     };
 
@@ -191,44 +214,66 @@ describe('CartService', () => {
     jest.clearAllMocks();
   });
 
+  /**
+   * `getCart` no longer reads through Redis. The authenticated cart is now
+   * loaded with a single `cartRepository.createQueryBuilder(...).getOne()`;
+   * Redis survives in this service only for stock reservations and the guest
+   * cart. Tests that asserted `redisService.get('cart:1')` were asserting
+   * behaviour that has been deleted, so they are gone rather than "fixed".
+   */
   describe('getCart', () => {
-    it('should return cached cart if available', async () => {
-      const cachedCart = { ...mockCart, items: [] };
-      redisService.get.mockResolvedValue(JSON.stringify(cachedCart));
+    const mockCartRead = (resolvedCart: any) => {
+      const qb: any = {};
+      qb.leftJoinAndSelect = jest.fn(() => qb);
+      qb.where = jest.fn(() => qb);
+      qb.andWhere = jest.fn(() => qb);
+      qb.orderBy = jest.fn(() => qb);
+      qb.getOne = jest.fn().mockResolvedValue(resolvedCart);
+      cartRepository.createQueryBuilder.mockReturnValueOnce(qb);
+      return qb;
+    };
+
+    it('reads the cart from the database without consulting the cache', async () => {
+      const qb = mockCartRead({ ...mockCart, items: [] });
 
       const result = await service.getCart(1);
 
-      expect(redisService.get).toHaveBeenCalledWith('cart:1');
-      expect(result).toEqual(cachedCart);
-      expect(cartRepository.findOne).not.toHaveBeenCalled();
+      expect(qb.getOne).toHaveBeenCalled();
+      expect(redisService.get).not.toHaveBeenCalled();
+      expect(result.cartId).toBe(mockCart.id);
+      expect(result.items).toEqual([]);
     });
 
-    it('should fetch from database if cache miss', async () => {
-      redisService.get.mockResolvedValue(null);
-      cartRepository.findOne.mockResolvedValue(mockCart as any);
-
-      const result = await service.getCart(1);
-
-      expect(redisService.get).toHaveBeenCalledWith('cart:1');
-      expect(cartRepository.findOne).toHaveBeenCalled();
-      expect(redisService.set).toHaveBeenCalled();
-    });
-
-    it('should create new cart if none exists', async () => {
-      redisService.get.mockResolvedValue(null);
-      cartRepository.findOne.mockResolvedValue(null);
-      cartRepository.create.mockReturnValue(mockCart as any);
-      cartRepository.save.mockResolvedValue(mockCart as any);
+    it('creates an empty cart when the user has none', async () => {
+      mockCartRead(null);
+      cartRepository.create.mockReturnValue({ ...mockCart } as any);
+      cartRepository.save.mockResolvedValue({ ...mockCart } as any);
 
       const result = await service.getCart(1);
 
       expect(cartRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: 1,
-          status: CartStatus.ACTIVE,
-        }),
+        expect.objectContaining({ userId: 1, status: CartStatus.ACTIVE }),
       );
       expect(cartRepository.save).toHaveBeenCalled();
+      expect(result.items).toEqual([]);
+      expect(result.subtotal).toBe(0);
+    });
+
+    it('drops items whose variant or book has been deleted', async () => {
+      mockCartRead({
+        ...mockCart,
+        items: [
+          { id: 'ok', unitPrice: 100, qty: 1, bookFormatVariantId: 1,
+            bookFormatVariant: { format: BookFormat.EBOOK, book: { id: 'book-1' } } },
+          { id: 'orphan-variant', unitPrice: 100, qty: 1, bookFormatVariant: null },
+          { id: 'orphan-book', unitPrice: 100, qty: 1, bookFormatVariant: { format: BookFormat.EBOOK, book: null } },
+        ],
+      });
+
+      const result = await service.getCart(1);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.subtotal).toBe(100);
     });
   });
 
@@ -314,149 +359,246 @@ describe('CartService', () => {
     });
   });
 
+  /**
+   * The write paths all run inside a transaction and go through
+   * `queryRunner.manager`, not the injected repositories. The previous tests
+   * mocked the repositories and used an older field vocabulary (`quantity`
+   * for `qty`, `variant` for `bookFormatVariant`) and the wrong exception
+   * type for an oversell, so they were asserting a service that no longer
+   * exists.
+   */
+  const PHYSICAL_VARIANT = {
+    id: 1,
+    format: BookFormat.PAPERBACK,
+    price: 250,
+    stockQuantity: 10,
+    reservedQuantity: 0,
+    book: { id: 'book-1', title: 'A Paperback', coverImageUrl: 'cover.jpg' },
+  };
+
+  const DIGITAL_VARIANT = {
+    id: 2,
+    format: BookFormat.EBOOK,
+    price: 99,
+    stockQuantity: 0,
+    reservedQuantity: 0,
+    book: { id: 'book-2', title: 'An Ebook', coverImageUrl: 'cover.jpg' },
+  };
+
+  /** Route `manager.findOne` by entity, the way the service calls it. */
+  const managerFindOne = (byEntity: { cart?: any; cartItem?: any }) => {
+    queryRunnerMock.manager.findOne.mockImplementation((entity: any) => {
+      if (entity === Cart) return Promise.resolve(byEntity.cart ?? null);
+      if (entity === CartItem) return Promise.resolve(byEntity.cartItem ?? null);
+      return Promise.resolve(null);
+    });
+  };
+
+  /** `addToCart` finishes by returning `getCart`, which re-reads the cart. */
+  const stubTrailingGetCart = () => {
+    const qb: any = {};
+    qb.leftJoinAndSelect = jest.fn(() => qb);
+    qb.where = jest.fn(() => qb);
+    qb.andWhere = jest.fn(() => qb);
+    qb.orderBy = jest.fn(() => qb);
+    qb.getOne = jest.fn().mockResolvedValue({ ...mockCart, items: [] });
+    cartRepository.createQueryBuilder.mockReturnValue(qb);
+  };
+
   describe('addToCart', () => {
-    it('should add new item to cart with stock reservation', async () => {
-      const dto = { bookFormatVariantId: 1, qty: 2 };
+    beforeEach(stubTrailingGetCart);
 
-      redisService.get.mockResolvedValue(null);
-      cartRepository.findOne.mockResolvedValue({ ...mockCart, items: [] } as any);
-      variantRepository.findOne.mockResolvedValue(mockVariant as any);
-      bookRepository.findOne.mockResolvedValue(mockBook as any);
-      cartItemRepository.findOne.mockResolvedValue(null);
-      cartItemRepository.create.mockReturnValue({ quantity: 2 } as any);
-      cartItemRepository.save.mockResolvedValue({ quantity: 2 } as any);
-      variantRepository.save.mockResolvedValue({ ...mockVariant, reservedQuantity: 2 } as any);
+    it('creates the line and reserves stock for a physical variant', async () => {
+      managerFindOne({ cart: mockCart, cartItem: null });
+      managerQb.getOne.mockResolvedValue(PHYSICAL_VARIANT);
 
-      await service.addToCart(1, dto);
+      await service.addToCart(1, { bookFormatVariantId: 1, qty: 2 } as any);
 
-      expect(variantRepository.save).toHaveBeenCalledWith(expect.objectContaining({ reservedQuantity: 2 }));
-      expect(redisService.del).toHaveBeenCalledWith('cart:1');
+      expect(queryRunnerMock.manager.create).toHaveBeenCalledWith(
+        CartItem,
+        expect.objectContaining({ bookFormatVariantId: 1, qty: 2, unitPrice: 250 }),
+      );
+      // Reservation is applied through the update query builder, not a save().
+      expect(managerQb.execute).toHaveBeenCalled();
+      expect(queryRunnerMock.commitTransaction).toHaveBeenCalled();
     });
 
-    it('should increment quantity if item already exists', async () => {
-      const dto = { bookFormatVariantId: 1, qty: 2 };
-      const existingItem = { id: 'item-1', quantity: 3, variant: mockVariant };
+    it('reserves nothing for a digital variant, even with zero stock', async () => {
+      managerFindOne({ cart: mockCart, cartItem: null });
+      managerQb.getOne.mockResolvedValue(DIGITAL_VARIANT);
 
-      redisService.get.mockResolvedValue(null);
-      cartRepository.findOne.mockResolvedValue({ ...mockCart, items: [existingItem] } as any);
-      variantRepository.findOne.mockResolvedValue(mockVariant as any);
-      cartItemRepository.findOne.mockResolvedValue(existingItem as any);
-      cartItemRepository.save.mockResolvedValue({ ...existingItem, quantity: 5 } as any);
-      variantRepository.save.mockResolvedValue({ ...mockVariant, reservedQuantity: 2 } as any);
+      await service.addToCart(1, { bookFormatVariantId: 2, qty: 3 } as any);
 
-      await service.addToCart(1, dto);
-
-      expect(cartItemRepository.save).toHaveBeenCalledWith(expect.objectContaining({ quantity: 5 }));
+      expect(managerQb.execute).not.toHaveBeenCalled();
+      expect(queryRunnerMock.commitTransaction).toHaveBeenCalled();
     });
 
-    it('should throw error if insufficient stock', async () => {
-      const dto = { bookFormatVariantId: 1, qty: 200 };
+    it('adds to the existing quantity when the line is already in the cart', async () => {
+      const existing: any = { id: 'item-1', qty: 3 };
+      managerFindOne({ cart: mockCart, cartItem: existing });
+      managerQb.getOne.mockResolvedValue(PHYSICAL_VARIANT);
 
-      redisService.get.mockResolvedValue(null);
-      cartRepository.findOne.mockResolvedValue(mockCart as any);
-      variantRepository.findOne.mockResolvedValue(mockVariant as any);
+      await service.addToCart(1, { bookFormatVariantId: 1, qty: 2 } as any);
 
-      await expect(service.addToCart(1, dto)).rejects.toThrow(BadRequestException);
+      expect(existing.qty).toBe(5);
+      expect(queryRunnerMock.manager.save).toHaveBeenCalledWith(existing);
     });
 
-    it('should throw error if variant not found', async () => {
-      const dto = { bookFormatVariantId: 999, qty: 1 };
+    it('rejects an oversell with ConflictException and rolls back', async () => {
+      managerFindOne({ cart: mockCart, cartItem: null });
+      managerQb.getOne.mockResolvedValue({ ...PHYSICAL_VARIANT, stockQuantity: 1 });
 
-      redisService.get.mockResolvedValue(null);
-      cartRepository.findOne.mockResolvedValue(mockCart as any);
-      variantRepository.findOne.mockResolvedValue(null);
+      await expect(
+        service.addToCart(1, { bookFormatVariantId: 1, qty: 200 } as any),
+      ).rejects.toThrow(ConflictException);
 
-      await expect(service.addToCart(1, dto)).rejects.toThrow(NotFoundException);
+      expect(queryRunnerMock.rollbackTransaction).toHaveBeenCalled();
+      expect(queryRunnerMock.commitTransaction).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the variant does not exist', async () => {
+      managerFindOne({ cart: mockCart, cartItem: null });
+      managerQb.getOne.mockResolvedValue(null);
+
+      await expect(
+        service.addToCart(1, { bookFormatVariantId: 999, qty: 1 } as any),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(queryRunnerMock.rollbackTransaction).toHaveBeenCalled();
+    });
+
+    it('always releases the query runner, even when the transaction fails', async () => {
+      managerFindOne({ cart: mockCart, cartItem: null });
+      managerQb.getOne.mockResolvedValue(null);
+
+      await expect(
+        service.addToCart(1, { bookFormatVariantId: 999, qty: 1 } as any),
+      ).rejects.toThrow();
+
+      expect(queryRunnerMock.release).toHaveBeenCalled();
+    });
+  });
+
+  describe('updateCartItem', () => {
+    beforeEach(stubTrailingGetCart);
+
+    it('rejects a quantity the remaining stock cannot cover', async () => {
+      managerFindOne({
+        cartItem: {
+          id: 'item-1',
+          qty: 3,
+          bookFormatVariantId: 1,
+          isStockReserved: false,
+          cart: { userId: 1 },
+        },
+      });
+      managerQb.getOne.mockResolvedValue(PHYSICAL_VARIANT);
+
+      await expect(
+        service.updateCartItem(1, 'item-1', { qty: 200 } as any),
+      ).rejects.toThrow(ConflictException);
+
+      expect(queryRunnerMock.rollbackTransaction).toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException for an unknown line', async () => {
+      managerFindOne({ cartItem: null });
+
+      await expect(
+        service.updateCartItem(1, 'missing', { qty: 1 } as any),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("refuses to touch another user's cart line", async () => {
+      managerFindOne({
+        cartItem: { id: 'item-1', qty: 1, bookFormatVariantId: 1, cart: { userId: 999 } },
+      });
+
+      await expect(
+        service.updateCartItem(1, 'item-1', { qty: 2 } as any),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(queryRunnerMock.rollbackTransaction).toHaveBeenCalled();
     });
   });
 
   describe('removeFromCart', () => {
-    it('should remove item and release stock reservation', async () => {
+    it('releases the reservation and removes the line', async () => {
       const cartItem = {
         id: 'item-1',
-        quantity: 3,
-        variant: mockVariant,
-        cart: mockCart,
+        qty: 3,
+        cartId: mockCart.id,
+        bookFormatVariantId: 1,
+        isStockReserved: true,
+        bookFormatVariant: PHYSICAL_VARIANT,
+        cart: { userId: 1 },
       };
-
-      redisService.get.mockResolvedValue(null);
-      cartRepository.findOne.mockResolvedValue({ ...mockCart, items: [cartItem] } as any);
-      cartItemRepository.findOne.mockResolvedValue(cartItem as any);
-      cartItemRepository.delete.mockResolvedValue({ affected: 1 } as any);
-      variantRepository.save.mockResolvedValue({ ...mockVariant, reservedQuantity: -3 } as any);
+      managerFindOne({ cartItem });
 
       await service.removeFromCart(1, 'item-1');
 
-      expect(cartItemRepository.delete).toHaveBeenCalledWith('item-1');
-      expect(variantRepository.save).toHaveBeenCalledWith(expect.objectContaining({ reservedQuantity: -3 }));
-      expect(redisService.del).toHaveBeenCalledWith('cart:1');
+      expect(queryRunnerMock.manager.update).toHaveBeenCalledWith(
+        BookFormatVariant,
+        { id: PHYSICAL_VARIANT.id },
+        expect.any(Object),
+      );
+      expect(redisService.del).toHaveBeenCalledWith(
+        `cart_reservation:${mockCart.id}:1`,
+      );
+      expect(queryRunnerMock.manager.remove).toHaveBeenCalledWith(cartItem);
+      expect(queryRunnerMock.commitTransaction).toHaveBeenCalled();
     });
 
-    it('should throw error if item not found', async () => {
-      redisService.get.mockResolvedValue(null);
-      cartRepository.findOne.mockResolvedValue(mockCart as any);
-      cartItemRepository.findOne.mockResolvedValue(null);
+    it('removes a digital line without touching any reservation', async () => {
+      const cartItem = {
+        id: 'item-2',
+        qty: 1,
+        cartId: mockCart.id,
+        bookFormatVariantId: 2,
+        isStockReserved: false,
+        bookFormatVariant: DIGITAL_VARIANT,
+        cart: { userId: 1 },
+      };
+      managerFindOne({ cartItem });
+
+      await service.removeFromCart(1, 'item-2');
+
+      expect(queryRunnerMock.manager.update).not.toHaveBeenCalled();
+      expect(queryRunnerMock.manager.remove).toHaveBeenCalledWith(cartItem);
+    });
+
+    it('throws NotFoundException for an unknown line', async () => {
+      managerFindOne({ cartItem: null });
 
       await expect(service.removeFromCart(1, 'invalid')).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('clearCart', () => {
-    it('should clear all items and release reservations', async () => {
+    it('releases every physical reservation and removes all lines', async () => {
       const items = [
-        { id: '1', quantity: 2, variant: { ...mockVariant, id: 'v1' } },
-        { id: '2', quantity: 3, variant: { ...mockVariant, id: 'v2' } },
+        { id: '1', qty: 2, bookFormatVariantId: 1, isStockReserved: true,
+          bookFormatVariant: PHYSICAL_VARIANT },
+        { id: '2', qty: 3, bookFormatVariantId: 2, isStockReserved: false,
+          bookFormatVariant: DIGITAL_VARIANT },
       ];
-
-      redisService.get.mockResolvedValue(null);
-      cartRepository.findOne.mockResolvedValue({ ...mockCart, items } as any);
-      cartItemRepository.delete.mockResolvedValue({ affected: 2 } as any);
+      managerFindOne({ cart: { ...mockCart, items } });
 
       await service.clearCart(1);
 
-      expect(cartItemRepository.delete).toHaveBeenCalled();
-      expect(variantRepository.save).toHaveBeenCalledTimes(2);
-      expect(redisService.del).toHaveBeenCalledWith('cart:1');
-    });
-  });
-
-  describe('updateCartItem', () => {
-    it('should update item quantity and adjust reservation', async () => {
-      const dto = { qty: 5 };
-      const cartItem = {
-        id: 'item-1',
-        quantity: 3,
-        variant: mockVariant,
-        cart: mockCart,
-      };
-
-      redisService.get.mockResolvedValue(null);
-      cartRepository.findOne.mockResolvedValue({ ...mockCart, items: [cartItem] } as any);
-      cartItemRepository.findOne.mockResolvedValue(cartItem as any);
-      cartItemRepository.save.mockResolvedValue({ ...cartItem, quantity: 5 } as any);
-      variantRepository.save.mockResolvedValue({ ...mockVariant, reservedQuantity: 2 } as any);
-
-      await service.updateCartItem(1, 'item-1', dto);
-
-      expect(cartItemRepository.save).toHaveBeenCalledWith(expect.objectContaining({ quantity: 5 }));
-      expect(variantRepository.save).toHaveBeenCalledWith(expect.objectContaining({ reservedQuantity: 2 }));
-      expect(redisService.del).toHaveBeenCalledWith('cart:1');
+      // Only the physical, actually-reserved line gives stock back.
+      expect(queryRunnerMock.manager.update).toHaveBeenCalledTimes(1);
+      expect(redisService.del).toHaveBeenCalledWith(`cart_reservation:${mockCart.id}:1`);
+      expect(queryRunnerMock.manager.remove).toHaveBeenCalledWith(items);
+      expect(queryRunnerMock.commitTransaction).toHaveBeenCalled();
     });
 
-    it('should throw error if new quantity exceeds stock', async () => {
-      const dto = { qty: 200 };
-      const cartItem = {
-        id: 'item-1',
-        quantity: 3,
-        variant: mockVariant,
-        cart: mockCart,
-      };
+    it('is a no-op when the user has no active cart', async () => {
+      managerFindOne({ cart: null });
 
-      redisService.get.mockResolvedValue(null);
-      cartRepository.findOne.mockResolvedValue(mockCart as any);
-      cartItemRepository.findOne.mockResolvedValue(cartItem as any);
+      await service.clearCart(1);
 
-      await expect(service.updateCartItem(1, 'item-1', dto)).rejects.toThrow(BadRequestException);
+      expect(queryRunnerMock.manager.remove).not.toHaveBeenCalled();
     });
   });
 });
