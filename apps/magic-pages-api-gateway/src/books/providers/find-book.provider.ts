@@ -152,17 +152,27 @@ export class FindBookProvider {
         'book.updatedAt',        // Added
       ])
         .addSelect(subQuery => {
+          // `fileUrl` is the paid deliverable's storage URL. The response mapper
+          // (`BooksService.transformBookToResponse`) already strips it for
+          // non-admin callers, but it is left out of the projection entirely on
+          // the public path so the value never leaves Postgres for a request
+          // that has no business seeing it — one less place a future refactor
+          // can accidentally serialise it from.
+          const variantFields = [
+            `'id', variant.id`,
+            `'format', variant.format`,
+            `'price', variant.price`,
+            `'stockQuantity', variant."stockQuantity"`,
+            `'reservedQuantity', variant."reservedQuantity"`,
+            ...(isAdmin ? [`'fileUrl', variant."fileUrl"`] : []),
+            `'isbn', variant."isbn"`,
+          ].join(',\n                ');
+
           return subQuery
             // json_agg collects all results into an array
             .select(`json_agg(
               json_build_object(
-                'id', variant.id,
-                'format', variant.format,
-                'price', variant.price,
-                'stockQuantity', variant."stockQuantity",
-                'reservedQuantity', variant."reservedQuantity",
-                'fileUrl', variant."fileUrl",
-                'isbn', variant."isbn"
+                ${variantFields}
               ) ORDER BY variant.price ASC
             )`, 'variants')
             .from('book_format_varients', 'variant')

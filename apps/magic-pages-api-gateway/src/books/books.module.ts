@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ClientsModule } from '@nestjs/microservices';
 
 // modules
 import { UploadModule } from '../upload/upload.module';
@@ -26,14 +25,15 @@ import { Category } from '@app/contract/books/entities/categories.entity';
 import { Tag } from '@app/contract/books/entities/tags.entity';
 import { Author } from '@app/contract/author/entities/author.entity';
 
-// configs
-import { STORAGE_CONFIG } from '@app/contract/storage/configs/storage.config';
 // import { BoookMetricsProvider } from './providers/book-metrics.provider';
 
 @Module({
   imports: [
+    // `UploadModule` exports `UploadToStorageProvider`, which `UploadBookFilesProvider`
+    // now calls in-process. This module used to additionally register a TCP
+    // `ClientsModule` pointed at the `storage` microservice (localhost:3002);
+    // that microservice has been folded into the monolith and deleted.
     UploadModule,
-    ClientsModule.register([STORAGE_CONFIG.CLIENTS]),
     TypeOrmModule.forFeature([Book, Author, BookMetric, BookFormatVariant, Category, Tag]),
     PaginationModule,
     AuthModule,

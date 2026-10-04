@@ -9,6 +9,10 @@ import { UploadController } from './upload.controller';
   imports: [TypeOrmModule.forFeature([Upload])],
   controllers: [UploadController],
   providers: [UploadService, UploadToStorageProvider],
-  exports: [UploadService, TypeOrmModule],
+  // `UploadToStorageProvider` is exported so the books module (and anything
+  // else that needs raw object-storage access) can call it in-process. It used
+  // to be reached over TCP via the `storage` microservice, which has been
+  // folded into this module.
+  exports: [UploadService, UploadToStorageProvider, TypeOrmModule],
 })
 export class UploadModule { }

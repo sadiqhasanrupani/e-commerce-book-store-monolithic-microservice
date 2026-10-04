@@ -52,21 +52,9 @@ services:
   #     - postgres
   #     - minio
 
-  # storage:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   container_name: storage-microservice
-  #   working_dir: /app
-  #   command: sh -c "pnpm start:dev storage"
-  #   volumes:
-  #     - .:/app
-  #     - /app/node_modules
-  #   ports:
-  #     - "3002:3000"
-  #   depends_on:
-  #     - postgres
-  #     - minio
+  # NOTE: the `storage` microservice that used to be defined here (port 3002)
+  # has been folded into the monolith — its MinIO logic now lives in
+  # `apps/magic-pages-api-gateway/src/upload`. There is nothing left to run.
 
   # gateway:
   #   build:
@@ -82,6 +70,5 @@ services:
   #     - "3000:3000"
   #   depends_on:
   #     - books
-  #     - storage
   #     - postgres
   #     - redis
