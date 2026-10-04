@@ -36,7 +36,7 @@ async function bootstrap() {
   // Actually, a better way is to use json() with verify
   const bodyParser = require('body-parser');
   app.use(bodyParser.json({
-    verify: (req, res, buf) => {
+    verify: (req, _res, buf) => {
       if (req.url.includes('/webhook')) {
         req.rawBody = buf;
       }

@@ -1,5 +1,12 @@
 # Checkout & Payment Integration Guide
 
+> **⚠️ Partially stale (2026-08-19).** PhonePe, GooglePay and Paytm were removed
+> from the backend — **Razorpay is the only accepted provider** and
+> `paymentMethod` now validates against `razorpay` alone (anything else is a
+> 400 before any order row is written). Provider-specific sections below are
+> kept only as historical context. See
+> `internal-docs/eng-log/2026-08-19-drop-phonepe-and-fix-verify-order.code-changes.md`.
+
 This document outlines the checkout process, API integration details, and payment flow for the e-commerce storefront.
 
 ## 1. Checkout Process Overview
@@ -38,7 +45,7 @@ The checkout process is designed to be atomic and secure, handling stock reserva
 ### Request Body (`CheckoutDto`)
 ```json
 {
-  "paymentMethod": "phonepe", // or "googlepay"
+  "paymentMethod": "razorpay"
   "shippingAddress": {
     "line1": "123 Main St",
     "line2": "Apt 4B",

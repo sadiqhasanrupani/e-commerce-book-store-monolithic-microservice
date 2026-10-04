@@ -24,11 +24,13 @@ import { AgeGroup } from '@app/contract/age-groups/entities/age-group.entity';
 import { User } from '@app/contract/users/entities/user.entity';
 import { OrderStatusLog } from '@app/contract/orders/entities/order-status-log.entity';
 import { Refund } from '@app/contract/orders/entities/refund.entity';
-import { PhonePeProvider } from 'apps/magic-pages-api-gateway/src/cart/providers/phonepe.provider';
 import { RazorpayProvider } from 'apps/magic-pages-api-gateway/src/cart/providers/razorpay.provider';
+import { PaymentSettlementService } from 'apps/magic-pages-api-gateway/src/cart/services/payment-settlement.service';
+import { DigitalDeliveryService } from 'apps/magic-pages-api-gateway/src/digital-delivery/providers/digital-delivery.service';
+import { MailService } from 'apps/magic-pages-api-gateway/src/mail/mail.service';
 
 const mockMetricsService = { incrementPaymentWebhook: jest.fn() };
-const mockPhonePeProvider = { verifyWebhook: jest.fn().mockReturnValue({ isValid: true, transactionId: 'T1', status: 'SUCCESS' }) };
+const mockMailService = { sendDigitalDeliveryEmail: jest.fn().mockResolvedValue(undefined) };
 const mockRazorpayProvider = { verifyWebhook: jest.fn().mockReturnValue({ isValid: true, transactionId: 'T1', status: 'SUCCESS' }) };
 
 describe('PaymentWebhook Integration (Postgres)', () => {
@@ -64,8 +66,14 @@ describe('PaymentWebhook Integration (Postgres)', () => {
       controllers: [PaymentWebhookController],
       providers: [
         { provide: CartMetricsService, useValue: mockMetricsService },
-        { provide: PhonePeProvider, useValue: mockPhonePeProvider },
         { provide: RazorpayProvider, useValue: mockRazorpayProvider },
+        PaymentSettlementService,
+        // Settlement hands an order's digital lines to DigitalDeliveryService.
+        // These tests are about stock and cart state on a physical order, so
+        // SMTP is stubbed; the digital path has its own coverage in
+        // payment-reconciliation.int-spec.ts.
+        DigitalDeliveryService,
+        { provide: MailService, useValue: mockMailService },
       ],
     }).compile();
 
@@ -107,16 +115,19 @@ describe('PaymentWebhook Integration (Postgres)', () => {
     const txn = await transactionRepo.save({
       order: order,
       status: TransactionStatus.PENDING,
-      provider: PaymentProvider.PHONEPE,
+      provider: PaymentProvider.RAZORPAY,
+      gateway_ref_id: `order_test_${Date.now()}`,
       amount: 100,
       currency: 'INR'
     } as any);
 
     // 2. Execute Webhook
-    mockPhonePeProvider.verifyWebhook.mockReturnValue({ isValid: true, transactionId: txn.id, status: 'SUCCESS' });
-    const payload = { transactionId: txn.id, status: 'SUCCESS' };
+    // The controller maps the gateway reference (razorpay_order_id) back to our
+    // transaction via gateway_ref_id, so the mock returns that, not the UUID.
+    mockRazorpayProvider.verifyWebhook.mockReturnValue({ isValid: true, transactionId: txn.gateway_ref_id, status: 'SUCCESS' });
+    const payload = { transactionId: txn.gateway_ref_id, status: 'SUCCESS' };
     const req = { body: payload, rawBody: JSON.stringify(payload) };
-    const headers = { 'x-verify': 'dummy-signature' };
+    const headers = { 'x-razorpay-signature': 'dummy-signature' };
 
     const result = await controller.handleWebhook(req as any, headers as any);
 
@@ -152,16 +163,17 @@ describe('PaymentWebhook Integration (Postgres)', () => {
     const txn = await transactionRepo.save({
       order: order,
       status: TransactionStatus.PENDING,
-      provider: PaymentProvider.PHONEPE,
+      provider: PaymentProvider.RAZORPAY,
+      gateway_ref_id: `order_test_${Date.now()}`,
       amount: 100,
       currency: 'INR'
     } as any);
 
     // 2. Execute FAILED Webhook
-    mockPhonePeProvider.verifyWebhook.mockReturnValue({ isValid: true, transactionId: txn.id, status: 'FAILED' });
-    const payload = { transactionId: txn.id, status: 'FAILED' };
+    mockRazorpayProvider.verifyWebhook.mockReturnValue({ isValid: true, transactionId: txn.gateway_ref_id, status: 'FAILED' });
+    const payload = { transactionId: txn.gateway_ref_id, status: 'FAILED' };
     const req = { body: payload, rawBody: JSON.stringify(payload) };
-    const headers = { 'x-verify': 'dummy' };
+    const headers = { 'x-razorpay-signature': 'dummy' };
 
     await controller.handleWebhook(req as any, headers as any);
 

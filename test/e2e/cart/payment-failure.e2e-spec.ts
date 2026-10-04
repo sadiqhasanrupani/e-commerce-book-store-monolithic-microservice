@@ -68,7 +68,7 @@ describe('Checkout - Payment Failure & Rollback (E2E)', () => {
         .post('/api/v1/cart/checkout')
         .set('Authorization', `Bearer ${authToken}`)
         .send({
-          paymentProvider: 'phonepe',
+          paymentProvider: 'razorpay',
           idempotencyKey: `fail-test-${Date.now()}`,
         })
         .expect(201);
@@ -82,7 +82,7 @@ describe('Checkout - Payment Failure & Rollback (E2E)', () => {
           orderId,
           status: 'FAILED',
           transactionId: `txn_fail_${Date.now()}`,
-          provider: 'phonepe',
+          provider: 'razorpay',
         })
         .expect(200);
 

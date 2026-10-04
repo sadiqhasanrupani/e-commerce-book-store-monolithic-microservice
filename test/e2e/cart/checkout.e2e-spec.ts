@@ -97,7 +97,7 @@ describe('Checkout Flow (E2E)', () => {
         .post('/api/v1/cart/checkout')
         .set('Authorization', `Bearer ${authToken}`)
         .send({
-          paymentProvider: 'phonepe',
+          paymentProvider: 'razorpay',
           idempotencyKey: `test-${Date.now()}`,
         })
         .expect(201);
@@ -128,7 +128,7 @@ describe('Checkout Flow (E2E)', () => {
           orderId,
           status: 'SUCCESS',
           transactionId: `txn_${Date.now()}`,
-          provider: 'phonepe',
+          provider: 'razorpay',
         })
         .expect(200);
 

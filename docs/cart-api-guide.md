@@ -1,5 +1,12 @@
 # Cart API Documentation for Frontend Developers
 
+> **⚠️ Partially stale (2026-08-19).** PhonePe, GooglePay and Paytm were removed
+> from the backend — **Razorpay is the only accepted provider** and
+> `paymentMethod` now validates against `razorpay` alone (anything else is a
+> 400 before any order row is written). Provider-specific sections below are
+> kept only as historical context. See
+> `internal-docs/eng-log/2026-08-19-drop-phonepe-and-fix-verify-order.code-changes.md`.
+
 ## Table of Contents
 1. [Overview](#overview)
 2. [Authentication](#authentication)
@@ -18,7 +25,7 @@ The Cart API provides a complete shopping cart and checkout system with:
 - Real-time stock reservation using pessimistic locking
 - Redis caching for fast cart reads
 - Automatic reservation cleanup
-- UPI payment integration (PhonePe/GooglePay)
+- Payment integration via Razorpay (UPI, cards, netbanking)
 - Comprehensive error handling with user-friendly messages
 
 ---
@@ -257,7 +264,7 @@ Idempotency-Key: <unique-request-id>
 **Request Body:**
 ```json
 {
-  "paymentMethod": "phonepe" | "googlepay",
+  "paymentMethod": "razorpay",
   "shippingAddress": {
     "line1": "123 Main St",
     "city": "Mumbai",
@@ -460,7 +467,7 @@ const response = await fetch('/cart/checkout', {
     'Content-Type': 'application/json'
   },
   body: JSON.stringify({
-    paymentMethod: 'phonepe',
+    paymentMethod: 'razorpay',
     shippingAddress
   })
 });

@@ -89,37 +89,15 @@ describe('Cart Full Workflow Integration (e2e)', () => {
     const order = await dataSource.query(`SELECT * FROM "order" WHERE "userId" = ${user.id} ORDER BY "createdAt" DESC LIMIT 1`);
     const orderId = order[0].id;
 
-    const webhookPayload = {
-      code: 'PAYMENT_SUCCESS',
-      transactionId: `PHONEPE_${orderId}_${Date.now()}`,
-      amount: 20000, // in paise
-      providerReferenceId: 'PROV_REF_123',
-    };
+    // Driving the real webhook endpoint would require a valid
+    // `X-Razorpay-Signature` (HMAC-SHA256 of the raw body with
+    // RAZORPAY_WEBHOOK_SECRET), which means either shipping a test secret or
+    // replacing RazorpayProvider in the module — both out of scope for this
+    // wiring test. `test/integration/cart/payment-webhook.int-spec.ts` covers
+    // the settlement behaviour with the provider mocked instead.
 
-    // Calculate checksum (mock implementation in provider just checks if it exists)
-    // For PhonePe mock, we might need a specific header.
-    // Let's assume our mock provider accepts anything valid-looking if we are using the real provider code.
-    // Wait, we are using the real PhonePeProvider code which checks SHA256.
-    // We should probably mock the provider for integration tests or use a specific test key.
-    // For now, let's see if we can bypass or generate a valid signature.
-    // The PhonePeProvider uses a salt key. We can use the default test salt key.
-
-    // Actually, for integration tests, it's better to mock the external payment provider to avoid dependency on secrets.
-    // But here we are testing the full flow including the provider logic (except the actual HTTP call to PhonePe).
-    // The PhonePeProvider.verifyWebhook logic is: SHA256(body + salt) + ### + saltIndex
-
-    // Let's skip the webhook verification complexity for now and focus on the flow logic.
-    // Or we can manually update the order status in DB to simulate webhook effect if webhook is too hard to invoke.
-    // But invoking webhook is better coverage.
-
-    // Let's try to generate a valid signature if possible, or mock the provider.
-    // Since we can't easily mock the provider in E2E/Integration without replacing the module, 
-    // and we want to test the real module wiring, we should try to generate the signature.
-
-    // However, for this specific test file, let's assume we can hit the webhook.
-    // If not, we will manually update DB.
-
-    // Let's manually update DB for now to verify the rest of the flow (Order -> Stock).
+    // Simulate the webhook's effect on the DB directly to verify the rest of
+    // the flow (Order -> Stock).
     // Simulating webhook logic:
     await dataSource.query(`UPDATE "order" SET "payment_status" = '${PaymentStatus.PAID}' WHERE "id" = ${orderId}`);
     await dataSource.query(`UPDATE "cart" SET "status" = '${CartStatus.COMPLETED}' WHERE "userId" = ${user.id} AND "status" = '${CartStatus.CHECKOUT}'`);

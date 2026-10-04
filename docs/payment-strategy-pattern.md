@@ -1,5 +1,12 @@
 # Payment Strategy Pattern - Fintech Best Practices
 
+> **⚠️ Partially stale (2026-08-19).** PhonePe, GooglePay and Paytm were removed
+> from the backend — **Razorpay is the only accepted provider** and
+> `paymentMethod` now validates against `razorpay` alone (anything else is a
+> 400 before any order row is written). Provider-specific sections below are
+> kept only as historical context. See
+> `internal-docs/eng-log/2026-08-19-drop-phonepe-and-fix-verify-order.code-changes.md`.
+
 ## Overview
 
 Based on 100+ years of combined fintech experience, this payment system implements industry-standard patterns for:

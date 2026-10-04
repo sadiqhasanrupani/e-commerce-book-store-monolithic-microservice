@@ -1,13 +1,17 @@
 /**
- * Payment provider interface for UPI payments
- * Supports multiple providers: PhonePe, GooglePay, Paytm, etc.
+ * Payment provider abstraction.
  *
- * Based on 100+ years of fintech experience, this abstraction provides:
+ * Razorpay is currently the only implementation — PhonePe was removed and
+ * GooglePay/Paytm were never wired up (roadmap #6). The interface is kept
+ * because it is what the checkout, webhook, reconciliation and refund paths
+ * code against, so adding a second gateway later stays a matter of writing one
+ * class rather than rewriting call sites.
+ *
+ * It provides:
  * - Provider-agnostic payment initiation
  * - Webhook signature verification
  * - Payment status polling
  * - Refund support
- * - Multi-currency support (future)
  */
 
 import { PaymentProvider } from '@app/contract/carts/enums/payment-provider.enum';

@@ -11,9 +11,9 @@ import { BookFormatVariant } from '@app/contract/books/entities/book-format-vari
 import { Transaction } from '@app/contract/orders/entities/transaction.entity';
 import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { PaymentProvider } from '@app/contract/carts/enums/payment-provider.enum';
+import { CheckoutDto } from '@app/contract/carts/dtos/checkout.dto';
 import { PaymentStatus } from '@app/contract/orders/enums/order-status.enum';
 import { ConfigModule } from '@nestjs/config';
-import { PhonePeProvider } from '../../../apps/magic-pages-api-gateway/src/cart/providers/phonepe.provider';
 import { RazorpayProvider } from '../../../apps/magic-pages-api-gateway/src/cart/providers/razorpay.provider';
 import { CartMetricsService } from '../../../apps/magic-pages-api-gateway/src/cart/metrics/cart-metrics.service';
 import { BookFormat } from '@app/contract/books/enums/book-format.enum';
@@ -28,9 +28,31 @@ import { OrderStatusLog } from '@app/contract/orders/entities/order-status-log.e
 import { Refund } from '@app/contract/orders/entities/refund.entity';
 
 // Mock dependencies
-const mockPhonePeProvider = { initiatePayment: jest.fn().mockResolvedValue({ transactionId: 'T1', paymentUrl: 'url' }) };
 const mockRazorpayProvider = { initiatePayment: jest.fn().mockResolvedValue({ transactionId: 'T2', paymentUrl: 'url' }) };
 const mockMetricsService = { incrementCheckoutRequest: jest.fn(), observeCheckoutDuration: jest.fn() };
+
+/**
+ * `CheckoutDto` requires the buyer-identity fields (firstName/lastName/email/
+ * saveInfo) that these tests never care about. Building the DTO through this
+ * helper keeps the call sites about the thing under test (locking, idempotency,
+ * oversell) and keeps the file type-checking — it was failing to compile before
+ * this helper existed, so the whole suite was skipped.
+ */
+const checkoutDto = (phone: string): CheckoutDto => ({
+  firstName: 'Test',
+  lastName: 'Buyer',
+  email: 'buyer@test.com',
+  saveInfo: false,
+  paymentMethod: PaymentProvider.RAZORPAY,
+  shippingAddress: {
+    line1: '12 MG Road',
+    city: 'Mumbai',
+    state: 'MH',
+    postalCode: '400001',
+    country: 'IN',
+    phone,
+  },
+});
 
 describe('Checkout Integration (Postgres)', () => {
   let module: TestingModule;
@@ -64,7 +86,6 @@ describe('Checkout Integration (Postgres)', () => {
         ],
         providers: [
           CheckoutService,
-          { provide: PhonePeProvider, useValue: mockPhonePeProvider },
           { provide: RazorpayProvider, useValue: mockRazorpayProvider },
           { provide: CartMetricsService, useValue: mockMetricsService },
         ],
@@ -102,7 +123,7 @@ describe('Checkout Integration (Postgres)', () => {
     await cartItemRepo.save({ cart: cart, bookFormatVariant: variant, qty: 1, unitPrice: 100, isStockReserved: false } as any);
 
     // 2. Execute
-    const result = await service.checkout(user1Id, { paymentMethod: PaymentProvider.PHONEPE, shippingAddress: { phone: '1234567890' } as any });
+    const result = await service.checkout(user1Id, checkoutDto('1234567890'));
 
     // 3. Assert
     const updatedVariant = await variantRepo.findOne({ where: { id: variant.id } });
@@ -123,14 +144,14 @@ describe('Checkout Integration (Postgres)', () => {
     const idempotencyKey = "unique-key-123";
 
     // 2. First Call
-    const res1 = await service.checkout(2, { paymentMethod: PaymentProvider.PHONEPE, shippingAddress: { phone: '123' } as any }, idempotencyKey);
+    const res1 = await service.checkout(2, checkoutDto('123'), idempotencyKey);
 
     // 3. Second Call (Replay)
-    const res2 = await service.checkout(2, { paymentMethod: PaymentProvider.PHONEPE, shippingAddress: { phone: '123' } as any }, idempotencyKey);
+    const res2 = await service.checkout(2, checkoutDto('123'), idempotencyKey);
 
     // 4. Assert
     expect(res1).toEqual(res2);
-    expect(mockPhonePeProvider.initiatePayment).toHaveBeenCalledTimes(1); // Provider called only ONCE
+    expect(mockRazorpayProvider.initiatePayment).toHaveBeenCalledTimes(1); // Provider called only ONCE
   });
 
   it('should prevent overselling when 2 users try to reserve simultaneously', async () => {
@@ -154,8 +175,8 @@ describe('Checkout Integration (Postgres)', () => {
 
     // 2. Race Condition Simulation
     const results = await Promise.allSettled([
-      service.checkout(3, { paymentMethod: PaymentProvider.PHONEPE, shippingAddress: { phone: '111' } as any }),
-      service.checkout(4, { paymentMethod: PaymentProvider.PHONEPE, shippingAddress: { phone: '222' } as any })
+      service.checkout(3, checkoutDto('111')),
+      service.checkout(4, checkoutDto('222'))
     ]);
 
     // 3. Assert

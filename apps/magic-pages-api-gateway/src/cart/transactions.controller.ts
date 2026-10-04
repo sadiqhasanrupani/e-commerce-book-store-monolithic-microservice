@@ -16,9 +16,9 @@ import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Transaction, TransactionStatus } from '@app/contract/orders/entities/transaction.entity';
-import { PhonePeProvider } from './providers/phonepe.provider';
 import { RazorpayProvider } from './providers/razorpay.provider';
 import { PaymentProvider, RefundRequest } from './interfaces/payment-provider.interface';
+import { TRANSACTION_PROVIDERS, TransactionProvider } from '@app/contract/carts/enums/payment-provider.enum';
 
 import { Auth } from '../auth/decorator/auth.decorator';
 import { AuthTypes } from '@app/contract/auth/enums/auth-types.enum';
@@ -31,7 +31,6 @@ export class TransactionsController {
   constructor(
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
-    private readonly phonePeProvider: PhonePeProvider,
     private readonly razorpayProvider: RazorpayProvider,
   ) { }
 
@@ -40,7 +39,9 @@ export class TransactionsController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'status', required: false, enum: TransactionStatus })
-  @ApiQuery({ name: 'provider', required: false, enum: PaymentProvider })
+  // Filtering still allows `phonepe` so admins can find historical rows, even
+  // though no new PhonePe transaction can be created.
+  @ApiQuery({ name: 'provider', required: false, enum: TRANSACTION_PROVIDERS })
   @ApiQuery({ name: 'startDate', required: false, type: String, description: 'ISO 8601 date string' })
   @ApiQuery({ name: 'endDate', required: false, type: String, description: 'ISO 8601 date string' })
   @ApiQuery({ name: 'minAmount', required: false, type: Number })
@@ -50,7 +51,7 @@ export class TransactionsController {
     @Query('page') page = 1,
     @Query('limit') limit = 10,
     @Query('status') status?: TransactionStatus,
-    @Query('provider') provider?: PaymentProvider,
+    @Query('provider') provider?: TransactionProvider,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('minAmount') minAmount?: number,
@@ -143,25 +144,29 @@ export class TransactionsController {
     const refundAmount = body.amount || Number(transaction.amount);
     const reason = body.reason || 'Admin initiated refund';
 
+    // Razorpay refunds are keyed by the Order ID (gateway_ref_id) we stored at
+    // checkout. Legacy PhonePe transactions can no longer be refunded through
+    // this endpoint — that provider is gone; those must be handled in the
+    // PhonePe merchant dashboard.
+    if (transaction.provider !== PaymentProvider.RAZORPAY) {
+      throw new BadRequestException(
+        `Refunds are only supported for Razorpay transactions (this one is '${transaction.provider}')`,
+      );
+    }
+
+    if (!transaction.gateway_ref_id) {
+      throw new BadRequestException('Transaction has no gateway reference to refund against');
+    }
+
     const refundRequest: RefundRequest = {
-      transactionId: transaction.gateway_ref_id || transaction.id, // Use gateway ref if available, else internal ID (for PhonePe we use UUID)
+      transactionId: transaction.gateway_ref_id,
       amount: refundAmount,
       reason: reason,
     };
 
     let response;
     try {
-      if (transaction.provider === PaymentProvider.PHONEPE) {
-        // For PhonePe, we used transaction.id as merchantTransactionId
-        refundRequest.transactionId = transaction.id;
-        response = await this.phonePeProvider.initiateRefund(refundRequest);
-      } else if (transaction.provider === PaymentProvider.RAZORPAY) {
-        // For Razorpay, we need the Order ID (gateway_ref_id) which we stored
-        refundRequest.transactionId = transaction.gateway_ref_id;
-        response = await this.razorpayProvider.initiateRefund(refundRequest);
-      } else {
-        throw new BadRequestException('Unsupported payment provider for refund');
-      }
+      response = await this.razorpayProvider.initiateRefund(refundRequest);
 
       this.logger.log(`Refund initiated for transaction ${id}: ${JSON.stringify(response)}`);
 

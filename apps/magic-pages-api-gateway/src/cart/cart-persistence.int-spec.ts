@@ -15,6 +15,9 @@ import { CartStatus } from '@app/contract/carts/enums/cart-status.enum';
 import { BookFormat } from '@app/contract/books/enums/book-format.enum';
 import { RedisService } from '@app/redis';
 import { CartMetricsService } from './metrics/cart-metrics.service';
+import { RazorpayProvider } from './providers/razorpay.provider';
+import { Transaction } from '@app/contract/orders/entities/transaction.entity';
+import { PaymentProvider } from '@app/contract/carts/enums/payment-provider.enum';
 
 describe('Cart Persistence & Soft Reservation (Mocked Integration)', () => {
   let cartService: CartService;
@@ -62,8 +65,13 @@ describe('Cart Persistence & Soft Reservation (Mocked Integration)', () => {
     del: jest.fn(),
   };
 
-  const mockPaymentProvider = {
-    initiatePayment: jest.fn().mockResolvedValue({ status: 'SUCCESS' }),
+  const mockRazorpayProvider = {
+    initiatePayment: jest.fn().mockResolvedValue({ transactionId: 'order_test_1', status: 'SUCCESS' }),
+  };
+
+  const mockTransactionRepository = {
+    findOne: jest.fn().mockResolvedValue(null),
+    save: jest.fn().mockImplementation((txn) => Promise.resolve({ id: 'txn-uuid-1', ...txn })),
   };
 
   const mockMetricsService = {
@@ -87,7 +95,7 @@ describe('Cart Persistence & Soft Reservation (Mocked Integration)', () => {
         ReservationWorkerService,
         { provide: DataSource, useValue: mockDataSource },
         { provide: RedisService, useValue: mockRedisService },
-        { provide: 'PAYMENT_PROVIDER', useValue: mockPaymentProvider },
+        { provide: RazorpayProvider, useValue: mockRazorpayProvider },
         { provide: CartMetricsService, useValue: mockMetricsService },
         { provide: getRepositoryToken(Cart), useValue: { find: jest.fn(), findOne: jest.fn(), create: jest.fn(), save: jest.fn() } },
         { provide: getRepositoryToken(CartItem), useValue: { createQueryBuilder: jest.fn() } },
@@ -95,6 +103,7 @@ describe('Cart Persistence & Soft Reservation (Mocked Integration)', () => {
         { provide: getRepositoryToken(Book), useValue: {} },
         { provide: getRepositoryToken(Order), useValue: {} },
         { provide: getRepositoryToken(OrderItem), useValue: {} },
+        { provide: getRepositoryToken(Transaction), useValue: mockTransactionRepository },
       ],
     }).compile();
 
@@ -222,7 +231,11 @@ describe('Cart Persistence & Soft Reservation (Mocked Integration)', () => {
     });
 
     await checkoutService.checkout(999, {
-      paymentMethod: 'PHONEPE' as any,
+      firstName: 'Test',
+      lastName: 'User',
+      email: 'test.user@example.com',
+      saveInfo: false,
+      paymentMethod: PaymentProvider.RAZORPAY,
       shippingAddress: { line1: 'Test', city: 'Test', state: 'TS', pincode: '123', phone: '123' },
     });
 
@@ -234,8 +247,10 @@ describe('Cart Persistence & Soft Reservation (Mocked Integration)', () => {
       2
     );
 
-    // Verify Final Decrement
-    expect(mockQueryRunner.manager.decrement).toHaveBeenCalledWith(
+    // Checkout must NOT touch stockQuantity: the reservation is held until the
+    // payment result lands (webhook or reconciliation), which is where the
+    // permanent deduction happens — see PaymentSettlementService.
+    expect(mockQueryRunner.manager.decrement).not.toHaveBeenCalledWith(
       BookFormatVariant,
       { id: 1 },
       'stockQuantity',
