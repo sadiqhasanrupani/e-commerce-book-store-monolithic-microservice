@@ -19,6 +19,7 @@ import {
   MergeCartItemDto,
 } from '@app/contract/carts/dtos/merge-cart.dto';
 import { CartResponseDto, CartItemResponseDto } from '@app/contract/carts/dtos/cart-response.dto';
+import { ShippingRateService } from './shipping-rate.service';
 
 const RESERVATION_TTL = 900; // 15 minutes for authenticated users
 
@@ -39,6 +40,7 @@ export class CartMergeService {
     private readonly variantRepository: Repository<BookFormatVariant>,
     private readonly dataSource: DataSource,
     private readonly redisService: RedisService,
+    private readonly shippingRateService: ShippingRateService,
   ) { }
 
   /**
@@ -376,13 +378,21 @@ export class CartMergeService {
 
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
 
+    // Same flat-rate rule as `CartService.buildCartResponse` and
+    // `CheckoutService`, resolved through the one service that owns it — a
+    // merged cart must quote the same shipping the user would have been quoted
+    // had they never logged out.
+    const shipping = this.shippingRateService.resolveShippingCost(
+      this.shippingRateService.cartHasPhysicalItems(cart.items),
+    );
+
     return {
       id: cart.id,
       items,
       subtotal,
-      shipping: 0,
+      shipping,
       discount: 0,
-      total: subtotal,
+      total: subtotal + shipping,
     };
   }
 
