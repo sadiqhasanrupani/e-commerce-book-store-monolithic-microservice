@@ -14,9 +14,9 @@ import { AuthService } from './providers/auth.service';
 import { HashingProvider } from './providers/hashing.provider';
 import { BcryptProvider } from './providers/bcrypt.provider';
 import { Argon2Provider } from './providers/argon2.provider';
-import { MailService } from './providers/mail.service';
+import { MailModule } from '../mail/mail.module';
 import { OtpService } from './providers/otp.service';
-import { EmailConsumer } from './consumers/email.consumer';
+import { EmailConsumer } from '../mail/consumers/email.consumer';
 import { RmqModule } from '@rmq/rmq';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EmailVerification } from '@app/contract/auth/entities/email-verification.entity';
@@ -30,11 +30,21 @@ import { User } from '@app/contract/users/entities/user.entity';
     GlobalConfigModule,
     RmqModule.registerAsync(),
     TypeOrmModule.forFeature([EmailVerification, User]),
+    // `MailService` lives in its own module so digital delivery can send mail
+    // without importing the whole auth graph. Auth's own consumers (AuthService,
+    // EmailConsumer) resolve it through this import exactly as before.
+    MailModule,
   ],
+  // `EmailConsumer`'s source now lives under `src/mail/consumers/` with the rest
+  // of the mail layer, but it stays REGISTERED here rather than in `MailModule`.
+  // It needs `RmqService`, and `AuthModule` already imports `RmqModule`; moving
+  // the registration would force `MailModule` to import RabbitMQ too, which
+  // would drag an RMQ dependency into every module that only wants to send an
+  // e-mail (digital delivery, orders) — the exact coupling `MailModule` exists
+  // to avoid. It also consumes an auth-domain event, `email_verification.requested`.
   controllers: [AuthController, AuthAdminController, EmailConsumer],
   providers: [
     AuthService,
-    MailService,
     OtpService,
     OtpService,
     UserContextService,

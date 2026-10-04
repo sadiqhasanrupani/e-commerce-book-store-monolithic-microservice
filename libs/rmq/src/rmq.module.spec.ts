@@ -9,10 +9,19 @@ describe('RmqModule', () => {
   let configMock: Partial<ConfigService>;
 
   beforeEach(async () => {
+    // The factory reads the url with getOrThrow (required) and the queue with
+    // get (it has a code-level default), so the double must provide BOTH. With
+    // only getOrThrow stubbed, the factory threw "configService.get is not a
+    // function" and the failure looked like a config problem rather than a
+    // spec problem.
     configMock = {
       getOrThrow: jest.fn((key: string) => {
         if (key === 'rabbitmq.url') return 'amqp://localhost';
+        return undefined as any;
+      }),
+      get: jest.fn((key: string) => {
         if (key === 'rabbitmq.queue') return 'test-queue';
+        return undefined as any;
       }),
     };
 
@@ -29,6 +38,8 @@ describe('RmqModule', () => {
 
     expect(client).toBeDefined();
     expect(configMock.getOrThrow).toHaveBeenCalledWith('rabbitmq.url');
-    expect(configMock.getOrThrow).toHaveBeenCalledWith('rabbitmq.queue');
+    // Queue is read with `get`, not `getOrThrow` — it falls back to
+    // 'magic-pages-queue' when unset.
+    expect(configMock.get).toHaveBeenCalledWith('rabbitmq.queue');
   });
 });

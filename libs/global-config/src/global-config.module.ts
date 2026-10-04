@@ -10,7 +10,8 @@ import jwtConfig from '@app/contract/auth/configs/jwt.config';
 import environmentSchema from './schemas/environment.schema';
 import rabbitmqConfig from './configs/rabbitmq.config';
 import redisConfig from './configs/redis.config';
-import mailConfig from './configs/mail.config';
+import mailConfig from '@app/contract/mail/configs/mail.config';
+import shippingConfig from '@app/contract/carts/configs/shipping.config';
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
@@ -19,7 +20,7 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: NODE_ENV ? `.env.${NODE_ENV}` : '.env',
-      load: [databaseConfig, minioConfig, jwtConfig, hashConfig, rabbitmqConfig, redisConfig, mailConfig],
+      load: [databaseConfig, minioConfig, jwtConfig, hashConfig, rabbitmqConfig, redisConfig, mailConfig, shippingConfig],
       validationSchema: environmentSchema,
     }),
     ConfigModule.forFeature(jwtConfig),

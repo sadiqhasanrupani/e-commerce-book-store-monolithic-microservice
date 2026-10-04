@@ -1,5 +1,8 @@
 import * as Joi from 'joi';
 
+import { mailEnvironmentSchema } from '@app/contract/mail/configs/mail.config';
+import { shippingEnvironmentSchema } from '@app/contract/carts/configs/shipping.config';
+
 /**
  * Validates and enforces required environment variables at application startup.
  * If any required variable is missing or invalid, NestJS will throw an error.
@@ -26,6 +29,18 @@ export default Joi.object({
   STORAGE_ACCESS_KEY: Joi.string().required(),
   STORAGE_SECRET_KEY: Joi.string().required(),
   STORAGE_BUCKET: Joi.string().required(),
+
+  /**
+   * Second bucket for non-public objects (paid deliverables, archived files).
+   *
+   * Optional so that an existing `.env` still boots: when it is absent the
+   * upload provider derives `<STORAGE_BUCKET>-private`. It is validated as a
+   * plain string rather than required because the fallback is safe (a *private*
+   * bucket), and a missing value must never be able to make deliverables land
+   * in the world-readable bucket.
+   */
+  STORAGE_PRIVATE_BUCKET: Joi.string().optional(),
+
   STORAGE_REGION: Joi.string().required(),
 
   /**
@@ -83,12 +98,14 @@ export default Joi.object({
 
   /**
    * Mail Configuration
+   *
+   * Spread in from `@app/contract/mail/configs/mail.config` so the rules live
+   * beside the config object they validate. `MAIL_PROVIDER` (smtp | resend,
+   * default smtp) decides which block is required: an SMTP deployment is never
+   * asked for `RESEND_API_KEY`, and a Resend deployment is never asked for
+   * `MAIL_HOST` / `MAIL_USER` / `MAIL_PASS`.
    */
-  MAIL_HOST: Joi.string().required(),
-  MAIL_PORT: Joi.number().integer().default(587),
-  MAIL_USER: Joi.string().required(),
-  MAIL_PASS: Joi.string().required(),
-  MAIL_FROM: Joi.string().email().required(),
+  ...mailEnvironmentSchema,
 
   /**
    * Razorpay Payment Gateway
@@ -96,4 +113,14 @@ export default Joi.object({
   RAZORPAY_KEY_ID: Joi.string().required(),
   RAZORPAY_KEY_SECRET: Joi.string().required(),
   RAZORPAY_WEBHOOK_SECRET: Joi.string().optional(),
+
+  /**
+   * Shipping
+   *
+   * `SHIPPING_FLAT_RATE_PAISE` — the single flat rate charged on any order
+   * containing a physical line. Optional, defaults to 0 (no shipping charged),
+   * which preserves the pre-existing behaviour on a deployment that has not set
+   * it yet.
+   */
+  ...shippingEnvironmentSchema,
 });
