@@ -1,22 +1,47 @@
-import { ConflictException, Inject, Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigType } from '@nestjs/config';
 
 import jwtConfig from '@app/contract/auth/configs/jwt.config';
 
-import { RegisterAuthDto } from '@app/contract/auth/dtos/register-auth.dto';
 import { VerifyOtpDto } from '@app/contract/auth/dtos/verify-otp.dto';
 import { AuthInput, SignInData } from '@app/contract/auth/types/validate-user.type';
 import { AuthResult } from '@app/contract/auth/types/authenticate.type';
+import { AuthErrorCode } from '@app/contract/auth/enums/auth-error-code.enum';
 
 import { UsersService } from '../../users/providers/users.service';
 import { HashingProvider } from './hashing.provider';
 import { Roles } from '@app/contract/users/enums/roles.enum';
+import { UserStatus } from '@app/contract/users/enums/user-status.enum';
+import { User } from '@app/contract/users/entities/user.entity';
 import { OtpService } from './otp.service';
 import { RABBITMQ_CLIENT } from '@rmq/rmq/constants/rmq.constant';
 import { ClientProxy } from '@nestjs/microservices';
-import { lastValueFrom } from 'rxjs';
 import { RegisterDto } from '@app/contract/auth/dtos/register.dto';
+
+/**
+ * Options accepted by {@link AuthService.authenticate}.
+ */
+export type AuthenticateOptions = {
+  /**
+   * Skip the email-verification gate.
+   *
+   * SECURITY: this must stay `false` for every storefront/customer login path.
+   * The only sanctioned caller passing `true` is the internal admin/CRM login
+   * (`AuthAdminController`), whose accounts are provisioned out-of-band and may
+   * legitimately never have gone through the customer OTP flow.
+   */
+  allowUnverifiedEmail?: boolean;
+};
 
 /**
  * @class AuthService
@@ -32,6 +57,8 @@ import { RegisterDto } from '@app/contract/auth/dtos/register.dto';
  */
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly hashingProvider: HashingProvider,
@@ -47,41 +74,113 @@ export class AuthService {
    * @method authenticate
    * @description
    * Authenticates a user using email and password credentials.
-   * If valid, returns a signed JWT access token.
+   * If valid AND the account has completed email verification, returns a signed
+   * JWT access token.
    *
    * @param input - The authentication payload (email, password)
+   * @param options - See {@link AuthenticateOptions}. Storefront callers must not pass
+   *                  `allowUnverifiedEmail`.
+   * @throws {UnauthorizedException} `INVALID_CREDENTIALS` — unknown email or wrong password
+   * @throws {ForbiddenException} `EMAIL_NOT_VERIFIED` — correct password, unverified account
+   * @throws {ForbiddenException} `ACCOUNT_NOT_ACTIVE` — suspended/deleted account
+   * @throws {ConflictException} `PASSWORD_NOT_SET` — account has no password (social login)
    * @returns {Promise<AuthResult>} - JWT token and user info
    */
-  async authenticate(input: AuthInput): Promise<AuthResult> {
-    const user = await this.validateUser(input);
-    return this.signIn(user);
+  async authenticate(input: AuthInput, options: AuthenticateOptions = {}): Promise<AuthResult> {
+    const user = await this.validateCredentials(input);
+
+    if (!options.allowUnverifiedEmail) {
+      this.assertLoginAllowed(user);
+    }
+
+    return this.signIn(this.toSignInData(user));
   }
 
   /**
-   * @method validateUser
+   * @method validateCredentials
    * @description
-   * Validates user credentials by verifying email and password.
+   * Verifies the email/password pair ONLY. Deliberately says nothing about the
+   * account's verification status — that is {@link assertLoginAllowed}'s job, and it
+   * must run *after* this so we never disclose account state to someone who did not
+   * supply the correct password.
    *
    * @param input - The authentication data containing email and password
-   * @throws {UnauthorizedException} if user not found or password mismatch
-   * @returns {Promise<SignInData>} - Validated user details
+   * @throws {UnauthorizedException} `INVALID_CREDENTIALS` if user not found or password mismatch
+   * @throws {ConflictException} `PASSWORD_NOT_SET` if the account has no password hash
+   * @returns {Promise<User>} - The matched user entity
    */
-  private async validateUser(input: AuthInput): Promise<SignInData> {
+  private async validateCredentials(input: AuthInput): Promise<User> {
     const user = await this.usersService.findByEmail(input.email);
 
+    // Identical error for "no such user" and "wrong password": returning a
+    // distinguishable response here would turn sign-in into an email-enumeration oracle.
+    const invalidCredentials = () =>
+      new UnauthorizedException({
+        code: AuthErrorCode.INVALID_CREDENTIALS,
+        message: 'Invalid email or password',
+      });
+
     if (!user) {
-      throw new UnauthorizedException(`Invalid credentials for email: ${input.email}`);
+      throw invalidCredentials();
     }
 
     if (!user.passwordHash) {
-      throw new ConflictException(`Password not set for user with email: ${input.email}`);
+      throw new ConflictException({
+        code: AuthErrorCode.PASSWORD_NOT_SET,
+        message: 'This account has no password set. Please sign in with the method you originally used.',
+      });
     }
 
     const isPasswordValid = await this.hashingProvider.comparePassword(input.password, user.passwordHash);
     if (!isPasswordValid) {
-      throw new UnauthorizedException(`Incorrect password for email: ${input.email}`);
+      throw invalidCredentials();
     }
 
+    return user;
+  }
+
+  /**
+   * @method assertLoginAllowed
+   * @description
+   * The email-verification gate. Central choke point: every path that issues a JWT for
+   * an existing account runs this, so a user who never completed the registration OTP
+   * cannot obtain a token by any route.
+   *
+   * A user row is considered verified when `status = ACTIVE`. `emailVerifiedAt` is set
+   * at the same moment by `UpdateUserProvider.activateUser`, and is checked as a
+   * belt-and-braces guard against rows activated by a manual SQL update.
+   *
+   * @param user - The user entity being logged in
+   * @throws {ForbiddenException} `EMAIL_NOT_VERIFIED` while the account is still PENDING
+   * @throws {ForbiddenException} `ACCOUNT_NOT_ACTIVE` for suspended/deleted accounts
+   */
+  private assertLoginAllowed(user: User): void {
+    console.log(`[auth.service]::${Date.now()}::user detail::`, user);
+
+    if (user.status === UserStatus.PENDING || !user.emailVerifiedAt) {
+      this.logger.warn(`Blocked sign-in for unverified account (userId=${user.id})`);
+
+      throw new ForbiddenException({
+        code: AuthErrorCode.EMAIL_NOT_VERIFIED,
+        message: 'Please verify your email address before signing in. Check your inbox for the verification code.',
+        // Echoed back so the storefront can jump straight to the OTP screen
+        // without asking the user to retype their address.
+        email: user.email,
+      });
+    }
+
+    if (user.status !== UserStatus.ACTIVE || user.isDeleted) {
+      this.logger.warn(`Blocked sign-in for inactive account (userId=${user.id}, status=${user.status})`);
+
+      throw new ForbiddenException({
+        code: AuthErrorCode.ACCOUNT_NOT_ACTIVE,
+        message: 'This account is not active. Please contact support.',
+      });
+    }
+  }
+
+  /** Narrows a `User` entity down to the claims we put in the JWT. */
+  private toSignInData(user: User): SignInData {
     return {
       userId: user.id,
       email: user.email,
@@ -110,8 +209,6 @@ export class AuthService {
       // 1. Destructure fullName and role (if it exists on DTO)
       const { email, password, fullName } = registerDto;
 
-      console.log('[AuthService] Starting registration for:', email);
-
       // --- NAME SPLITTING LOGIC ---
       // Split by one or more spaces to handle accidental double spaces
       const nameParts = fullName.trim().split(/\s+/);
@@ -131,18 +228,17 @@ export class AuthService {
       if (existingUser) {
         throw new ConflictException(`User with email ${email} already exists`);
       }
-      console.log('[AuthService] User does not exist, proceeding...');
 
       // Validate and hash password (Optional: DTO usually handles validation, but this is a safe double-check)
       if (typeof password !== 'string' || password.trim().length < 6) {
         throw new BadRequestException('Password must be at least 6 characters long');
       }
 
-      console.log('[AuthService] Hashing password...');
       const passwordHash = await this.hashingProvider.hashPassword(password);
 
-      // Create user record in DB
-      console.log('[AuthService] Creating user in database...');
+      // Create user record in DB. Note: `users.status` defaults to PENDING and
+      // `email_verified_at` stays NULL until the OTP is verified — that is exactly
+      // what `assertLoginAllowed` gates on.
       const newUser = await this.usersService.create({
         email,
         passwordHash,
@@ -152,15 +248,13 @@ export class AuthService {
         role: Roles.BUYER,
       });
 
-      console.log('[AuthService] User created with ID:', newUser.id);
+      this.logger.log(`Registered new user (userId=${newUser.id}), awaiting email verification`);
 
       // Generate OTP
-      console.log('[AuthService] Generating OTP...');
       const otp = await this.otpService.generateAndSaveOtp(newUser, 'REGISTRATION');
 
-      // Publish event
-      console.log('[AuthService] Emitting email verification event...');
-      this.rmqClient.emit('email_verification.requested', {
+      // Publish the "send the OTP email" event.
+      this.publishVerificationEmail({
         userId: newUser.id,
         email: newUser.email,
         otp,
@@ -173,9 +267,34 @@ export class AuthService {
         email: newUser.email,
       };
     } catch (error) {
-      console.error('[AuthService] Registration error:', error);
+      this.logger.error(`Registration failed: ${error instanceof Error ? error.message : 'unknown error'}`);
       throw error;
     }
+  }
+
+  /**
+   * @method publishVerificationEmail
+   * @description
+   * Publishes `email_verification.requested` onto RabbitMQ for `EmailConsumer` to pick up.
+   *
+   * Fire-and-forget by design — a broker hiccup must not fail an otherwise successful
+   * registration — but NOT silent. `ClientProxy.emit()` returns a connectable Observable;
+   * with nobody subscribed, a publish failure is swallowed with no trace whatsoever, which
+   * is a large part of why the missing OTP emails went unnoticed. Subscribing purely for
+   * the error channel keeps the async behaviour and gives us a log line when it breaks.
+   *
+   * The OTP itself is never logged.
+   */
+  private publishVerificationEmail(payload: { userId: number; email: string; otp: string; name?: string }): void {
+    this.rmqClient.emit('email_verification.requested', payload).subscribe({
+      error: (error: unknown) => {
+        this.logger.error(
+          `Failed to publish email_verification.requested for userId=${payload.userId}: ` +
+          `${error instanceof Error ? error.message : String(error)}. ` +
+          `The user will not receive their OTP — check RABBITMQ_URL and broker health.`,
+        );
+      },
+    });
   }
 
   async verifyRegistration(verifyOtpDto: VerifyOtpDto): Promise<AuthResult> {
@@ -187,16 +306,19 @@ export class AuthService {
 
     const isValid = await this.otpService.verifyOtp(user.email, otp, 'REGISTRATION');
     if (!isValid) {
-      throw new BadRequestException('Invalid email or OTP');
+      throw new BadRequestException({
+        code: AuthErrorCode.INVALID_OTP,
+        message: 'Invalid email or OTP',
+      });
     }
 
-    await this.usersService.activateUser(user.id);
+    // Flips status PENDING -> ACTIVE and stamps email_verified_at. This is the ONLY
+    // path that clears the `assertLoginAllowed` gate for a customer account.
+    const activatedUser = await this.usersService.activateUser(user.id);
 
-    return this.signIn({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-    });
+    this.logger.log(`Email verified for userId=${activatedUser.id}`);
+
+    return this.signIn(this.toSignInData(activatedUser));
   }
 
   /**
@@ -271,18 +393,21 @@ export class AuthService {
     // Check if user exists and is verified
     const user = await this.usersService.findByEmail(email);
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException({
+        code: AuthErrorCode.INVALID_CREDENTIALS,
+        message: 'Invalid email or password',
+      });
     }
 
-    if (user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('Please verify your email first');
-    }
+    // Same gate as password sign-in, so passwordless login cannot be used to
+    // sidestep email verification.
+    this.assertLoginAllowed(user);
 
     // Generate OTP for LOGIN
     const otp = await this.otpService.generateAndSaveOtp(user, 'LOGIN');
 
     // Emit email event
-    this.rmqClient.emit('email_verification.requested', {
+    this.publishVerificationEmail({
       userId: user.id,
       email: user.email,
       otp,
@@ -303,37 +428,27 @@ export class AuthService {
     // Verify OTP
     const isValid = await this.otpService.verifyOtp(email, otp, 'LOGIN');
     if (!isValid) {
-      throw new UnauthorizedException('Invalid or expired OTP');
+      throw new UnauthorizedException({
+        code: AuthErrorCode.INVALID_OTP,
+        message: 'Invalid or expired OTP',
+      });
     }
 
     // Get user
     const user = await this.usersService.findByEmail(email);
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException({
+        code: AuthErrorCode.INVALID_CREDENTIALS,
+        message: 'Invalid email or password',
+      });
     }
 
-    // Generate JWT token
-    const accessToken = await this.jwtService.signAsync(
-      {
-        sub: user.id,
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-      },
-      {
-        audience: this.jwtConfiguration.audience,
-        issuer: this.jwtConfiguration.issuer,
-        secret: this.jwtConfiguration.secret,
-        expiresIn: this.jwtConfiguration.accessTokenTtl,
-      },
-    );
+    // A LOGIN-purpose OTP is only ever issued to a verified account, but re-assert here
+    // so this method is safe on its own terms — it is a token-issuing entry point.
+    this.assertLoginAllowed(user);
 
-    return {
-      accessToken,
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-    };
+    // Route through the shared signIn() so there is exactly one JWT-issuing code path.
+    return this.signIn(this.toSignInData(user));
   }
 
   /**

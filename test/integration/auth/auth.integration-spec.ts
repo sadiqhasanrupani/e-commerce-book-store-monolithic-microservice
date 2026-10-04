@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { MagicPagesApiGatewayModule } from 'apps/magic-pages-api-gateway/src/magic-pages-api-gateway.module';
-import { MailService } from 'apps/magic-pages-api-gateway/src/auth/providers/mail.service';
+import { MailService } from 'apps/magic-pages-api-gateway/src/mail/mail.service';
 import { DataSource } from 'typeorm';
 import { EmailVerification } from '@app/contract/auth/entities/email-verification.entity';
 import { User } from '@app/contract/users/entities/user.entity';
@@ -82,8 +82,30 @@ describe('Auth Integration', () => {
         email,
         otp: knownOtp,
       })
-      .expect(200);
+      // 201, not 200: `@Post('register/verify')` carries no `@HttpCode(200)`, so
+      // Nest's default POST status applies. That is the behaviour live today and
+      // the storefront is built against it, so the stale assertion is what gets
+      // corrected here — NOT the controller.
+      .expect(201);
 
+    // KNOWN STALE — this suite is still red here, for a reason that predates the
+    // mail-provider refactor and is unrelated to it.
+    //
+    // Until 2026-08-26 this whole file failed to COMPILE (it imported `MailService`
+    // from the old `auth/providers/` path), so nothing below the import line had run
+    // in a long time and this drift was invisible. Fixing the import made it visible.
+    //
+    // The drift: `AuthService.verifyRegistration` now ends in `return this.signIn(...)`,
+    // so a successful verification auto-logs the user in and responds with
+    // `{ accessToken, email, role, userId }`. There is no `message`, and — because the
+    // controller does not take `@Res()` — no `set-cookie` header either, so the three
+    // cookie assertions below are stale too.
+    //
+    // Deliberately NOT rewritten to match the implementation: doing that would
+    // rubber-stamp the current behaviour rather than test it. Which side is stale is a
+    // product question (does the storefront read a token body, or expect cookies?) and
+    // this is a live client backend, so it needs Sadiq's call, not a guess from the
+    // code. See internal-docs/eng-log/2026-08-26-mail-provider-strategy-pattern.code-review.md.
     expect(verifyResponse.body).toHaveProperty('message', 'Verification successful');
     // Check cookies
     const cookies = verifyResponse.headers['set-cookie'] as unknown as string[];

@@ -22,7 +22,13 @@ export class AuthAdminController {
   @ApiResponse({ status: 201, description: 'Admin authenticated successfully.' })
   @ApiResponse({ status: 403, description: 'Forbidden. User is not an admin.' })
   async login(@Body() signInDto: SignInDto) {
-    const result = await this.authService.authenticate(signInDto);
+    // SECURITY / SCOPE NOTE: the customer email-OTP verification gate is deliberately
+    // bypassed here. Admin accounts are provisioned out-of-band (seed/manual insert) and
+    // never go through the storefront registration OTP flow, so gating this path would
+    // lock the CRM out. This exemption is intentionally explicit and greppable — see
+    // internal-docs/eng-log/2026-08-25-gate-login-on-email-verification.code-changes.md
+    // for the follow-up to give admins their own provisioning + verification story.
+    const result = await this.authService.authenticate(signInDto, { allowUnverifiedEmail: true });
 
     // Explicit cast or just logic check. result.role is likely 'string' or 'Roles'. 
     if ((result.role as any) !== Roles.ADMIN) {

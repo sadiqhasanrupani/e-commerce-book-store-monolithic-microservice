@@ -56,9 +56,25 @@ export class AuthController {
 
   @Auth(AuthTypes.NONE)
   @Role(RoleTypes.NONE)
-  @ApiOperation({ summary: 'Sign in with email and password' })
+  @ApiOperation({
+    summary: 'Sign in with email and password',
+    description:
+      'Requires a verified account. If the credentials are correct but the email has not been ' +
+      'verified via OTP, responds 403 with code `EMAIL_NOT_VERIFIED` — the storefront should send ' +
+      'the user to the verify-email screen rather than showing a credentials error.',
+  })
   @ApiResponse({ status: 201, description: 'User authenticated and tokens issued.' })
-  @ApiResponse({ status: 401, description: 'Invalid credentials.' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials. Body: `{ code: "INVALID_CREDENTIALS", message }`.' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Email not verified. Body: `{ code: "EMAIL_NOT_VERIFIED", message, email }`. ' +
+      'Also returned as `{ code: "ACCOUNT_NOT_ACTIVE", message }` for suspended/deleted accounts.',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Account has no password set. Body: `{ code: "PASSWORD_NOT_SET", message }`.',
+  })
   @Post('sign-in')
   login(@Body() signinDto: SignInDto) {
     return this.authService.authenticate(signinDto);
