@@ -15,7 +15,6 @@ export class BookFormatVariant {
   @PrimaryGeneratedColumn()
   id: number;
 
-
   @ManyToOne(() => Book, (book) => book.formats, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'book_id' })
   book: Book;
@@ -24,14 +23,24 @@ export class BookFormatVariant {
   @Column({ type: 'enum', enum: BookFormat })
   format: BookFormat;
 
-  /** format specific type */
-  @Column({ type: 'numeric', precision: 10, scale: 2 })
+  /** Original/list price in the store's currency */
+  @Column({ type: 'numeric', precision: 10, scale: 2, default: 0 })
+  originalPrice: number;
+
+  /** Discounted/current selling price in the store's currency */
+  @Column({ type: 'numeric', precision: 10, scale: 2, default: 0 })
   price: number;
+
+  @Column({ type: 'boolean', default: false })
+  includeTax: boolean;
+
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
+  taxPercentage?: number;
 
   @Column({ type: 'jsonb', nullable: true })
   priceMap: Record<string, number>;
 
-  /** stock only for physical item*/
+  /** stock only for physical item */
   @Column({ type: 'int', default: 0 })
   stockQuantity: number;
 

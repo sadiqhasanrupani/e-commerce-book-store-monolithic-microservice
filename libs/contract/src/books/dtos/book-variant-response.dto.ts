@@ -35,4 +35,19 @@ export class BookVariantResponseDto {
 
   @ApiProperty({ nullable: true })
   isbn?: string;
+
+  /**
+   * Whether an admin explicitly ticked "Include Tax" on this variant.
+   * The storefront uses this to gate ALL tax wording (e.g. "Inclusive of all
+   * taxes") — it must say nothing about tax unless this is `true`.
+   */
+  @ApiProperty({ example: false })
+  includeTax: boolean;
+
+  /**
+   * Tax rate in percent (e.g. 18 for 18%). Only present when `includeTax` is
+   * `true`; omitted otherwise so the storefront never shows a stray rate.
+   */
+  @ApiProperty({ nullable: true, example: 18 })
+  taxPercentage?: number;
 }

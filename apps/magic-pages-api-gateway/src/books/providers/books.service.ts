@@ -612,6 +612,8 @@ export class BooksService {
       // to protect and nothing to change.
       const canSeeFileUrl = isAdmin || isPhysical;
 
+      const includeTax = variant.includeTax ?? false;
+
       return {
         id: variant.id,
         format: variant.format,
@@ -625,6 +627,13 @@ export class BooksService {
         reservedQuantity: variant.reservedQuantity,
         fileUrl: canSeeFileUrl ? (variant.fileUrl ?? undefined) : undefined,
         isbn: variant.isbn ?? undefined,
+        // Gates tax wording on the storefront PDP: nothing about tax is shown
+        // unless an admin explicitly ticked "Include Tax" on the variant.
+        includeTax,
+        // `taxPercentage` is a Postgres `numeric` with no transformer, so it
+        // arrives as a string ("18.00"); coerce so the wire type is a number.
+        taxPercentage:
+          includeTax && variant.taxPercentage != null ? Number(variant.taxPercentage) : undefined,
       };
     });
 
