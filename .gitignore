@@ -73,3 +73,10 @@ sprint-reports/
 redis-data/
 
 /test-videos
+# keep the env template tracked (*.env.* above would otherwise ignore it)
+!.env.example
+
+# local scratch / generated artefacts
+/documentation/
+/tmp-*.cjs
+/razorpay-cli-linux-amd64
